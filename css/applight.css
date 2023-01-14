@@ -1,0 +1,178 @@
+body {
+    font-family: Calibri, Arial, sans-serif;
+    font-size: 16px;
+    margin: 0;
+    padding: 0;
+    background-color: white;
+}
+/* *--------                 STACK Panes            ----------------*/
+.stack-pane {
+    background-color: white;
+    border-style: solid;
+    border-color: #a0a0a0;
+    border-width: 0px 1px 1px 1px;
+}
+.stack-pane-title {
+    color: #707070;
+    font-size: 14px;
+}
+.stack-label {
+    font-size: 13px;
+    color: white;
+}
+.stack-pane-chgbutton {
+    color: black;
+    border: none;
+    background-color: white;
+    padding: 0px;
+}
+.stack-pane-chgbutton:hover {
+    transition: 0.1s;
+    transform: scale(1.5);
+}
+/* *--------                 BUTTONS             ----------------*/
+/*  IMAGE BUTTON */
+.imagebutton {
+    background-color: #00000000;
+    background-repeat: no-repeat;
+    background-size: contain;
+    border-width: 0px;
+    outline: none;
+    transition: scale 1s;
+}
+.imagebutton:hover {
+    transition: 0.3s;
+    transform: scale(1.2);
+}
+.imagebutton:active {
+    transform: translateY(3px);
+}
+/*  STANDARD 1 */
+.basicbutton1 {
+    background-color: white;
+    border-radius: 6px;
+    color: black;
+    font-size: 16px;
+    border-style: solid;
+    border-width: 1px;
+    border-color: grey;
+    font-weight: bold;
+}
+.basicbutton1:hover {
+    transition: 0.1s;
+    font-size: 115%;
+}
+.basicbutton1:active {
+    transform: translateY(2px);
+}
+/*  STANDARD 1 */
+.min-button {
+    background-color: white;
+    font-size: 14px;
+    border: none;
+    font-weight: bold;
+    color: grey;
+    padding: 0px;
+}
+.min-button:hover {
+    transition: 0.3s;
+    transform: scale(1.5);
+}
+.min-button:active {
+    transform: translateY(2px);
+}
+/* *--------                 DRAGGING             ----------------*/
+.over {
+    border-color: black;
+    border-width: 2px;
+    border-style: dotted;
+}
+.draggable:hover {
+    border-color: black;
+    border-width: 2px;
+    border-style: dotted;
+}
+/* *--------                 SVG            ----------------*/
+.svgFix {
+    stroke: #808080;
+    stroke-width: 2px;
+    fill: #00000000;
+    opacity: 0;
+}
+.svgFix:hover {
+    opacity: 1;
+}
+.svgFix:active {
+    fill: #ffffff80;
+}
+/* *--------                Labels/text             ----------------*/
+.obj-label {
+    font-size: 13px;
+    color: #474d56;
+}
+.spn-label {
+    background-color: white;
+    font-size: 16px;
+    font-weight: bold;
+    color: #00529c;
+    border: 1px 0px 1px 0px;
+}
+/* *--------                OTHER           ----------------*/
+.inputcolor {
+    border-color: #808080;
+    background-color: #808080;
+    padding: 0px;
+    margin: 0px;
+}
+
+/* *--------                 CUSTOM SLIDER            ----------------*/
+/* The slider itself */
+.slider {
+    -webkit-appearance: none; /* Override default CSS styles */
+    appearance: none;
+    width: 100%; /* Full-width */
+    height: 18px; /* Specified height */
+    background: #d3d3d3; /* Grey background */
+    outline: none; /* Remove outline */
+    opacity: 0.7; /* Set transparency (for mouse-over effects on hover) */
+    -webkit-transition: 0.2s; /* 0.2 seconds transition on hover */
+    transition: opacity 0.2s;
+}
+/* Mouse-over effects */
+.slider:hover {
+    opacity: 1; /* Fully shown on mouse-over */
+}
+/* The slider handle (use -webkit- (Chrome, Opera, Safari, Edge) and -moz- (Firefox) to override default look) */
+.slider::-webkit-slider-thumb {
+    -webkit-appearance: none; /* Override default look */
+    appearance: none;
+    width: 8px; /* Set a specific slider handle width */
+    height: 18px; /* Slider handle height */
+    border-radius: 6px;
+    background: #000000; /* Green background */
+    cursor: pointer; /* Cursor on hover */
+}
+.slider::-moz-range-thumb {
+    width: 8px; /* Set a specific slider handle width */
+    height: 18px; /* Slider handle height */
+    background: #04aa6d; /* Green background */
+    cursor: pointer; /* Cursor on hover */
+}
+/* *--------                 CUSTOM CHECKBOX            ----------------*/
+.customcheck {
+    background-color: #00000000;
+    border: solid;
+    border-color: #808080;
+    border-width: 1px;
+    border-radius: 2px;
+    margin: 0px;
+    padding: 0px;
+}
+.customcheck:hover {
+    border-width: 2px;
+}
+.customcheck:active {
+    transform: translateY(2px);
+}
+.innercheck {
+}

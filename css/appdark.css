@@ -1,0 +1,173 @@
+body {
+    font-family: Calibri, Arial, sans-serif;
+    font-size: 16px;
+    margin: 0;
+    padding: 0;
+    background-color: black;
+}
+/* *--------                 STACK Panes            ----------------*/
+.stack-pane {
+    background-color: #232428;
+    border-style: solid;
+    border-width: 0px 1px 1px 1px;
+    border-color: #999fa8;
+    color: #a0a0a0;
+}
+.stack-pane-title {
+    color: #a0a0a0;
+    font-size: 14px;
+}
+.stack-pane-chgbutton {
+    color: lightgrey;
+    border: none;
+    background-color: #232428;
+}
+.stack-pane-chgbutton:hover {
+    transition: 0.1s;
+    transform: scale(1.5);
+}
+/*  IMAGE BUTTON */
+.imagebutton {
+    background-color: #00000000;
+    background-repeat: no-repeat;
+    background-size: contain;
+    border-width: 0px;
+    outline: none;
+    transition: scale 1s;
+}
+.imagebutton:hover {
+    transition: 0.3s;
+    transform: scale(1.2);
+}
+.imagebutton:active {
+    transform: translateY(3px);
+}
+/*  STANDARD 1 */
+.basicbutton1 {
+    background-color: black;
+    border-radius: 6px;
+    color: white;
+    font-size: 16px;
+    border-style: solid;
+    border-width: 1px;
+    border-color: grey;
+    font-weight: bold;
+}
+.basicbutton1:hover {
+    transition: 0.1s;
+    font-size: 115%;
+}
+.basicbutton1:active {
+    transform: translateY(2px);
+}
+/*  STANDARD 1 */
+.min-button {
+    background-color: black;
+    font-size: 14px;
+    border: none;
+    font-weight: bold;
+    color: grey;
+}
+.min-button:hover {
+    transition: 0.3s;
+    transform: scale(1.5);
+}
+.min-button:active {
+    transform: translateY(2px);
+}
+
+/* *--------                 DRAGGING             ----------------*/
+.over {
+    border-color: white;
+    border-width: 2px;
+    border-style: dotted;
+}
+.draggable:hover {
+    border-color: yellow;
+    border-width: 2px;
+    border-style: dotted;
+}
+
+.svgFix {
+    stroke: red;
+    stroke-width: 2px;
+    stroke-dasharray: 2, 2;
+    fill: #00000000;
+    opacity: 0;
+}
+.svgFix:hover {
+    opacity: 1;
+}
+.svgFix:active {
+    fill: #ffffff80;
+}
+/* *--------                OTHER           ----------------*/
+.inputcolor {
+    border-color: #808080;
+    background-color: #808080;
+    padding: 0px;
+    margin: 0px;
+}
+/* *--------                Labels/text             ----------------*/
+.obj-label {
+    font-size: 13px;
+    color: white;
+}
+.spn-label {
+    background-color: black;
+    font-size: 16px;
+    font-weight: bold;
+    color: white;
+    border: 1px 0px 1px 0px;
+}
+/* *--------                 CUSTOM SLIDER            ----------------*/
+/* The slider itself */
+.slider {
+    -webkit-appearance: none; /* Override default CSS styles */
+    appearance: none;
+    width: 100%; /* Full-width */
+    height: 18px; /* Specified height */
+    background: #838383; /* Grey background */
+    outline: none; /* Remove outline */
+    opacity: 0.7; /* Set transparency (for mouse-over effects on hover) */
+    -webkit-transition: 0.2s; /* 0.2 seconds transition on hover */
+    transition: opacity 0.2s;
+}
+/* Mouse-over effects */
+.slider:hover {
+    opacity: 1; /* Fully shown on mouse-over */
+}
+/* The slider handle (use -webkit- (Chrome, Opera, Safari, Edge) and -moz- (Firefox) to override default look) */
+.slider::-webkit-slider-thumb {
+    -webkit-appearance: none; /* Override default look */
+    appearance: none;
+    width: 8px; /* Set a specific slider handle width */
+    height: 18px; /* Slider handle height */
+    border-radius: 6px;
+    background: #ffffff; /* Green background */
+    cursor: pointer; /* Cursor on hover */
+}
+.slider::-moz-range-thumb {
+    width: 8px; /* Set a specific slider handle width */
+    height: 18px; /* Slider handle height */
+    background: #ffffff; /* Green background */
+    cursor: pointer; /* Cursor on hover */
+}
+/* *--------                 CUSTOM CHECKBOX            ----------------*/
+.customcheck {
+    background-color: #00000000;
+    border: solid;
+    border-color: #808080;
+    border-width: 1px;
+    border-radius: 2px;
+    margin: 0px;
+    padding: 0px;
+}
+.customcheck:hover {
+    border-width: 2px;
+}
+.customcheck:active {
+    transform: translateY(2px);
+}
+.innercheck {
+}
