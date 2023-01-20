@@ -3,18 +3,20 @@ body {
     font-size: 16px;
     margin: 0;
     padding: 0;
-    background-color: white;
+    background-color: #f0f0f0;
 }
 /* *--------                 STACK Panes            ----------------*/
 .stack-pane {
-    background-color: white;
+    background-color: #e0e0e0;
     border-style: solid;
     border-color: #a0a0a0;
     border-width: 0px 1px 1px 1px;
 }
 .stack-pane-title {
     color: #707070;
-    font-size: 14px;
+    font-size: 11px;
+    font-weight: bold;
+    height: 28px;
 }
 .stack-label {
     font-size: 13px;
@@ -23,7 +25,7 @@ body {
 .stack-pane-chgbutton {
     color: black;
     border: none;
-    background-color: white;
+    background-color: #e0e0e0;
     padding: 0px;
 }
 .stack-pane-chgbutton:hover {
@@ -93,21 +95,41 @@ body {
     border-style: dotted;
 }
 /* *--------                 SVG            ----------------*/
-.svgFix {
-    stroke: #808080;
+.svgDisplayObject {
+    stroke: #ffff00;
+    stroke-dasharray: 4, 6;
     stroke-width: 2px;
     fill: #00000000;
     opacity: 0;
 }
-.svgFix:hover {
+.svgDisplayObject:hover {
     opacity: 1;
 }
-.svgFix:active {
+.svgDisplayObject:active {
     fill: #ffffff80;
 }
+.highlight {
+    stroke: #ffff00;
+    stroke-width: 2px;
+    stroke-dasharray: 5, 1;
+    fill: #00000000;
+}
+.dragHandle {
+    stroke: yellow;
+    fill: #00000060;
+    stroke-width: 1px;
+}
+.dragHandle:hover {
+    fill: #ffffff60;
+    cursor: crosshair;
+}
+.dragHandle:active {
+    cursor: crosshair;
+}
+
 /* *--------                Labels/text             ----------------*/
 .obj-label {
-    font-size: 13px;
+    font-size: 12px;
     color: #474d56;
 }
 .spn-label {
@@ -119,12 +141,18 @@ body {
 }
 /* *--------                OTHER           ----------------*/
 .inputcolor {
-    border-color: #808080;
-    background-color: #808080;
+    background-color: transparent;
     padding: 0px;
     margin: 0px;
+    border-radius: 6px;
+    border: solid;
+    border-color: #808080;
 }
-
+.dropdown {
+    border: none;
+    color: grey;
+    background-color: #e0e0e0;
+}
 /* *--------                 CUSTOM SLIDER            ----------------*/
 /* The slider itself */
 .slider {

@@ -8,6 +8,24 @@ class AppData extends ApplicationData {
         super();
         this.createDisplaySettings();
         this.completedCallback = completedCallback;
+        this.openFile(
+            "data/ui_language.csv",
+            this.processTranslations.bind(this)
+        );
+    }
+    processTranslations(data) {
+        let lines = data.split("\n");
+        //console.log(lines);
+        let lans = lines.shift().split(",");
+        let translations = [];
+        while (lines.length) {
+            let chunks = lines.shift().split(",");
+            if (chunks.length < 2) continue;
+            translations.push(chunks);
+        }
+        //enable multilingual support
+        enableMultilingual(lans, translations);
+
         this.setup().then(() => {
             setTimeout(this.completedCallback, 100);
         });
@@ -16,20 +34,26 @@ class AppData extends ApplicationData {
         //Load Fixes
         this.aFixImage = [];
         let base = "images/fixes/";
-        for (let i = 0; i < 45; i++) {
+        let fixConfigs = ["square", "triangle", "star", "diamond", "circle"];
+        for (let i = 0; i < 15; i++) {
             let url = base + "fix" + i + ".png";
             let pic = await this.loadImage(url);
+            if (i < 5) pic.fixType = fixConfigs[i];
+            else pic.fixType = "bmp";
             this.aFixImage.push(pic);
         }
         //Load Airport Items
         this.aAirportImage = [];
         base = "images/airport/";
-        let aAPurl = ["runway.png", "taxiway.png", "approach.png"];
+        let aAPurl = ["runway", "approach"];
         for (let i = 0; i < aAPurl.length; i++) {
             let url = base + aAPurl[i];
-            let pic = await this.loadImage(url);
+            let pic = await this.loadImage(url + ".png");
+            pic.type = aAPurl[i];
+            pic.displaySize = { w: 100, h: 25 };
             this.aAirportImage.push(pic);
         }
+
         return null;
     }
     createDisplaySettings() {
@@ -40,10 +64,22 @@ class AppData extends ApplicationData {
             this.displaySettings = {
                 bShowGrid: true,
                 gridSpacing: 5,
-                gridColor: "#808080",
-                backgroundColor: "#FFFFFF",
+                gridColor: "#ACAAAA",
+                backgroundColor: "#787878",
                 bShowScale: true,
                 baseFixSize: 2.4,
+                fixStrokeColor: "#303030",
+                fixFillColor: "#FFFFFF00",
+                fixStrokeWeight: 2,
+                rwyStrokeColor: "#f0f0f0",
+                rwyFillColor: "#232428",
+                rwyStrokeWeight: 3,
+                taxiStrokeColor: "#808080",
+                taxiFillColor: "#80808080",
+                taxiStrokeWeight: 2,
+                approachStrokeColor: "#C0C0C0",
+                approachStrokeWeight: 1,
+                selectedColor: "#FFFF00",
             };
             this.saveDisplaySettings();
         }
@@ -63,6 +99,7 @@ class AppData extends ApplicationData {
         //sort array by layer number
         this.aDisplayObjects.sort((a, b) => a.layer - b.layer);
         for (let i = 0; i < this.aDisplayObjects.length; i++) {
+            this.aDisplayObjects[i].index = i;
             this.aDisplayObjects[i].draw(needsUpdate);
         }
     }
@@ -78,6 +115,14 @@ class AppData extends ApplicationData {
     }
     getItemFromIconID(testID) {
         return this.aDisplayObjects.find((item) => item.icon.id == testID);
+    }
+    deleteDisplayItem() {
+        if (this.itemSelected) {
+            this.itemSelected.destructor();
+            this.aDisplayObjects.splice(this.itemSelected.index, 1);
+            this.itemSelected = null;
+            main.triggerRedraw(true);
+        }
     }
 }
 //*------------------------User Interface
@@ -106,7 +151,7 @@ class UI extends UIContainer {
         //---------------------------
         //set up the image panel on the left side
         new StackManager("stkLeft", IMAGEBARWIDTH, "");
-        this.stkLeft.paneClosedHeight = 20;
+        this.stkLeft.paneClosedHeight = 30;
         this.stkLeft.bOpen = true;
         this.stkLeft.applyStyle("overflow", "visible");
         //----------LEFT SIDE PANES
@@ -115,7 +160,7 @@ class UI extends UIContainer {
         this.addAirportsPane();
         //set up the settings panels on the right side
         new StackManager("stkRight", RIGHTBARWIDTH, "");
-        this.stkRight.paneClosedHeight = 20;
+        this.stkRight.paneClosedHeight = 30;
         this.stkRight.bOpen = true;
         this.stkRight.applyStyle("overflow", "visible");
         //-----------RT SIDE PANES
@@ -129,7 +174,8 @@ class UI extends UIContainer {
         // this.animStart();
         this.onResizeEvent();
 
-        //setup event listener for redraw
+        //setup event listener for keypresses
+        this.keyHandler = new KeyHandler(this.keyboardHandler.bind(this));
     }
     onResizeEvent() {
         this.w = this.getWidth();
@@ -170,7 +216,7 @@ class UI extends UIContainer {
 
         //DARKMODE BUTTON
         new BasicButton("btnDarkmode", "", pn.id)
-            .fixSize(50, 50)
+            .fixSize(40, 40)
             .fixLocation(-5, -7)
             .addClass("imagebutton")
             .bgImage("images/darkmode.png")
@@ -178,15 +224,18 @@ class UI extends UIContainer {
             .addAction("darkMode")
             .listenForClicks(this.btnHandler.bind(this));
 
-        //LANGUAGE BUTTON
-        new BasicButton("btnLang", "", pn.id)
-            .fixSize(40, 28)
-            .fixLocation(54, 2)
-            .addClass("imagebutton")
-            .bgImage("images/bilingual.png")
-            .bgImageFit()
-            .listenForClicks(this.btnHandler.bind(this))
-            .addAction("chgLang");
+        //dropdown for language choice
+        let s = new SelectionBox("", pn.id)
+            .fixLocation(40, 3)
+            .fixSize(40, 20)
+            .listenForChanges(this.chgHandler.bind(this))
+            .addAction("langDropdown")
+            .addClass("dropdown");
+        let langs = getLanguages();
+        for (let i = 0; i < langs.length; i++) {
+            s.addOption(i, langs[i]);
+        }
+        s.selectOption(getCurrentLanguage());
 
         //CLOSE/OPEN buttons
         new BasicButton("btnCloseStkLeft", "", pn.id)
@@ -214,10 +263,8 @@ class UI extends UIContainer {
         pn.hideToggleButton();
     }
     addFixesPane() {
-        let pn = this.stkLeft
-            .addPane("pnFixes", "Fix")
-            .setBCaption("Fix", "Fixe");
-        let y = 24;
+        let pn = this.stkLeft.addPane("pnFixes", "Navaid");
+        let y = 30;
         let x = 2;
         for (let i = 0; i < appData.aFixImage.length; i++) {
             let p = appData.aFixImage[i];
@@ -239,21 +286,17 @@ class UI extends UIContainer {
         }
 
         //-----------------
-        pn.openHeight = 24 + (appData.aFixImage.length / 5) * 26;
-        //pn.changeState();
+        pn.openHeight = 30 + (appData.aFixImage.length / 5) * 26;
+        pn.changeState();
     }
     addAirportsPane() {
-        let pn = this.stkLeft
-            .addPane("pnAirport", "")
-            .setBCaption("Airport Related", "Liés à l'aéroport");
-        let y = 20;
+        let pn = this.stkLeft.addPane("pnAirport", "Airport Related");
+        let y = 30;
         //RUNWAY
-        new LabelBil("", "Runway", "Piste", pn.id)
-            .addClass("obj-label")
-            .fixLocation(8, y);
+        new Label("", "Runway", pn.id).addClass("obj-label").fixLocation(8, y);
         let p = appData.aAirportImage[0];
         let img = new Image("", pn.id, p.url)
-            .fixLocation(17, y + 15)
+            .fixLocation(17, y + 20)
             .fixSize(100, 25)
             .setDraggable(true)
             .addClass("draggable")
@@ -263,31 +306,14 @@ class UI extends UIContainer {
                 this.dragEnd.bind(this)
             );
 
-        //TAXIWAY
+        //APPROACH
         y += 45;
-        new LabelBil("", "Taxiway", "Taxiway", pn.id)
+        new Label("", "Approach", pn.id)
             .addClass("obj-label")
             .fixLocation(8, y);
         p = appData.aAirportImage[1];
         img = new Image("", pn.id, p.url)
-            .fixLocation(17, y + 15)
-            .fixSize(100, 25)
-            .setDraggable(true)
-            .addClass("draggable")
-            .addAction({ type: "taxiway" })
-            .enableDragTracking(
-                this.dragStart.bind(this),
-                this.dragEnd.bind(this)
-            );
-
-        //TAXIWAY
-        y += 45;
-        new LabelBil("", "Approach", "Approcher", pn.id)
-            .addClass("obj-label")
-            .fixLocation(8, y);
-        p = appData.aAirportImage[2];
-        img = new Image("", pn.id, p.url)
-            .fixLocation(17, y + 15)
+            .fixLocation(17, y + 20)
             .fixSize(100, 25)
             .setDraggable(true)
             .addClass("draggable")
@@ -298,18 +324,17 @@ class UI extends UIContainer {
             );
 
         //-----------------
-        pn.openHeight = y + 45;
+        pn.openHeight = y + 54;
         pn.changeState();
     }
     //------------------------------RIGHT SIDE
     addrPane0() {
         let pn = this.stkRight.addPane("pn0", "");
         pn.showOverflow();
-        new Label("lblTitle", "", pn.id)
+        new Label("lblTitle", "Working Title", pn.id)
             .fixLocation(30, 5)
             .fontSize(18)
-            .bold()
-            .setBCaption("Working Title", "Titre de travail");
+            .bold();
 
         //CLOSE/OPEN buttons
         new BasicButton("btnCloseStkRight", "", pn.id)
@@ -338,10 +363,8 @@ class UI extends UIContainer {
         pn.hideToggleButton();
     }
     addDisplaySettingsPane() {
-        let pn = this.stkRight
-            .addPane("pnDispSet", "")
-            .setBCaption("Display Settings", "Paramètres d'affichage");
-        let y = 20;
+        let pn = this.stkRight.addPane("pnDispSet", "Display Settings");
+        let y = 30;
 
         //GRID/SCALE checkboxes
         let g = new Container("cntGrid", pn.id)
@@ -353,7 +376,7 @@ class UI extends UIContainer {
             .fixLocation(0, 0)
             .fixSize(16, 16)
             .addAction("chkGrid");
-        new LabelBil("", "Grid", "Grille", g.id)
+        new Label("", "Grid", g.id)
             .addClass("obj-label")
             .fixLocation(18, 0)
             .labelFor(chk.id);
@@ -373,7 +396,7 @@ class UI extends UIContainer {
             .fixSize(16, 16)
             .addAction("chkScale");
 
-        new LabelBil("", "Scale", "Escalader", this.cntScale.id)
+        new Label("", "Scale", this.cntScale.id)
             .addClass("obj-label")
             .fixLocation(18, 0)
             .labelFor(chk.id);
@@ -382,29 +405,24 @@ class UI extends UIContainer {
 
         //GRID spacing
         y += 25;
-
         new Slider("", 5, 100, 5, appData.displaySettings.gridSpacing, pn.id)
-            .fixLocation(20, y + 15)
-            .setWidth(RIGHTBARWIDTH - 40)
+            .fixLocation(5, y + 15)
+            .setWidth(RIGHTBARWIDTH - 15)
             .listenForChanges(this.sliderHandler.bind(this))
             .addAction("sldGridSpacing")
             .addClass("slider");
-        new LabelBil("", "Grid Spacing", "Espacement de la grille", pn.id)
+        new Label("", "Grid Spacing", pn.id)
             .addClass("obj-label")
-            .setY(y)
-            .setWidth(RIGHTBARWIDTH)
-            .alignCenter();
+            .fixLocation(5, y);
 
         //DEFAULT FIX SIZE
         y += 40;
-        new LabelBil("", "Default Fix Size", "Taille fixe par défaut", pn.id)
+        new Label("", "Default Fix Size", pn.id)
             .addClass("obj-label")
-            .setY(y)
-            .setWidth(RIGHTBARWIDTH)
-            .alignCenter();
+            .fixLocation(5, y);
         new Slider("", 0.1, 20, 0.1, appData.displaySettings.baseFixSize, pn.id)
-            .fixLocation(20, y + 15)
-            .setWidth(RIGHTBARWIDTH - 40)
+            .fixLocation(5, y + 15)
+            .setWidth(RIGHTBARWIDTH - 15)
             .listenForChanges(this.sliderHandler.bind(this))
             .addAction("sldFixSize")
             .addClass("slider");
@@ -414,56 +432,125 @@ class UI extends UIContainer {
         pn.changeState();
     }
     addColorsPane() {
-        let pn = this.stkRight
-            .addPane("pnColor", "")
-            .setBCaption("Colours", "Couleurs");
-        let y = 20;
+        let pn = this.stkRight.addPane("pnColor", "Colors");
+        let y = 30;
         //Background Color
-        new LabelBil("", "Base", "Fond", pn.id)
-            .addClass("obj-label")
-            .fixLocation(8, y);
-        new ColorInput("", pn.id, appData.displaySettings.backgroundColor)
-            .fixLocation(5, y + 17)
-            .fixSize(40, 32)
+
+        let c = new ColorInput(
+            "",
+            pn.id,
+            appData.displaySettings.backgroundColor
+        )
+            .fixLocation(5, y)
+            .fixSize(40, 26)
             .addAction("clrBackground")
             .addClass("inputcolor")
             .listenForChanges(this.colorHandler.bind(this));
-
-        new LabelBil("", "Grid", "Grille", pn.id)
+        new Label("", "Base", pn.id)
             .addClass("obj-label")
-            .fixLocation(65, y);
-        new ColorInput("", pn.id, appData.displaySettings.gridColor)
-            .fixLocation(60, y + 17)
-            .fixSize(40, 32)
+            .fixLocation(50, y)
+            .labelFor(c.id);
+
+        y += 32;
+
+        c = new ColorInput("", pn.id, appData.displaySettings.gridColor)
+            .fixLocation(5, y)
+            .fixSize(40, 26)
             .addAction("clrGrid")
             .addClass("inputcolor")
             .listenForChanges(this.colorHandler.bind(this));
+        new Label("", "Grid", pn.id)
+            .addClass("obj-label")
+            .fixLocation(50, y)
+            .labelFor(c.id);
+
+        y += 32;
+
+        c = new ColorInput("", pn.id, appData.displaySettings.fixStrokeColor)
+            .fixLocation(5, y)
+            .fixSize(40, 26)
+            .addAction("clrFixStroke")
+            .addClass("inputcolor")
+            .listenForChanges(this.colorHandler.bind(this));
+        new Label("", "Navaid Border", pn.id)
+            .addClass("obj-label")
+            .fixLocation(50, y)
+            .labelFor(c.id);
+
+        y += 32;
+        c = new ColorInput("", pn.id, appData.displaySettings.fixFillColor)
+            .fixLocation(5, y)
+            .fixSize(40, 26)
+            .addAction("clrFixFill")
+            .addClass("inputcolor")
+            .listenForChanges(this.colorHandler.bind(this));
+        new Label("", "Navaid Fill", pn.id)
+            .addClass("obj-label")
+            .fixLocation(50, y)
+            .labelFor(c.id);
+
+        y += 32;
+        c = new ColorInput("", pn.id, appData.displaySettings.rwyStrokeColor)
+            .fixLocation(5, y)
+            .fixSize(40, 26)
+            .addAction("clrRwyStroke")
+            .addClass("inputcolor")
+            .listenForChanges(this.colorHandler.bind(this));
+        new Label("", "Runway Border", pn.id)
+            .addClass("obj-label")
+            .fixLocation(50, y)
+            .labelFor(c.id);
+
+        y += 32;
+        c = new ColorInput("", pn.id, appData.displaySettings.rwyFillColor)
+            .fixLocation(5, y)
+            .fixSize(40, 26)
+            .addAction("clrRwyFill")
+            .addClass("inputcolor")
+            .listenForChanges(this.colorHandler.bind(this));
+        new Label("", "Runway Fill", pn.id)
+            .addClass("obj-label")
+            .fixLocation(50, y)
+            .labelFor(c.id);
+
+        y += 32;
+        c = new ColorInput(
+            "",
+            pn.id,
+            appData.displaySettings.approachStrokeColor
+        )
+            .fixLocation(5, y)
+            .fixSize(40, 26)
+            .addAction("clrApproach")
+            .addClass("inputcolor")
+            .listenForChanges(this.colorHandler.bind(this));
+        new Label("", "Approach", pn.id)
+            .addClass("obj-label")
+            .fixLocation(50, y)
+            .labelFor(c.id);
 
         //-----------------------
-        pn.openHeight = y + 60;
+        pn.openHeight = y + 40;
         pn.changeState();
     }
     addAnimatePane() {
         let pn = this.stkRight.addPane("pnAnimate", "Animation");
         new BasicButton("", "Start", pn.id)
             .addClass("basicbutton1")
-            .fixLocation(5, 25)
+            .fixLocation(5, 30)
             .fixSize(75, 24)
             .listenForClicks(this.btnHandler.bind(this))
-            .addAction("animStart")
-            .setBCaption("Start", "Début");
+            .addAction("animStart");
 
         new BasicButton("", "Stop", pn.id)
             .addClass("basicbutton1")
-            .fixLocation(90, 25)
+            .fixLocation(90, 30)
             .fixSize(75, 24)
             .listenForClicks(this.btnHandler.bind(this))
-            .addAction("animStop")
-            .setBCaption("Stop", "Arrêter");
+            .addAction("animStop");
         pn.openHeight = 100;
         //pn.changeState();
     }
-
     //* ------------      EVENT HANDLERS ------------------------------
 
     //* ----------- -------------- ------------ EVENT HANDLERS
@@ -472,8 +559,6 @@ class UI extends UIContainer {
             this.animStart();
         } else if (details.action == "animStop") {
             this.animStop();
-        } else if (details.action == "chgLang") {
-            changeLanguage();
         } else if (details.action == "darkMode") {
             this.mode == "light" ? (this.mode = "dark") : (this.mode = "light");
             this.setDisplayMode();
@@ -524,10 +609,12 @@ class UI extends UIContainer {
             else this.cntScale.show();
         } else if (details.action == "chkScale") {
             appData.displaySettings.bShowScale = details.status;
+        } else if (details.action == "langDropdown") {
+            changeLanguage(Number(details.sender.getSelection().index));
         } else {
             console.log(details);
         }
-        this.triggerRedraw();
+        this.triggerRedraw(true);
         appData.saveDisplaySettings();
     }
     colorHandler(details) {
@@ -535,9 +622,26 @@ class UI extends UIContainer {
             appData.displaySettings.backgroundColor = details.value;
         } else if (details.action == "clrGrid") {
             appData.displaySettings.gridColor = details.value;
+        } else if (details.action == "clrFixStroke") {
+            appData.displaySettings.fixStrokeColor = details.value;
+        } else if (details.action == "clrFixFill") {
+            appData.displaySettings.fixFillColor = details.value;
+        } else if (details.action == "clrRwyStroke") {
+            appData.displaySettings.rwyStrokeColor = details.value;
+        } else if (details.action == "clrRwyFill") {
+            appData.displaySettings.rwyFillColor = details.value;
+        } else if (details.action == "clrApproach") {
+            appData.displaySettings.approachStrokeColor = details.value;
         }
         this.triggerRedraw();
         appData.saveDisplaySettings();
+    }
+    keyboardHandler(details) {
+        if (details.action == "Up") {
+            if (details.key == "Delete") {
+                appData.deleteDisplayItem();
+            }
+        }
     }
     //* ------------      ACTIONS ------------------------------
     triggerRedraw(needsUpdate) {
@@ -586,9 +690,17 @@ class DisplayContainer extends Container {
         if (info.action.type == "fix") {
             //console.log("fix dropped at: " + dispX + "," + dispY);
             let size = appData.displaySettings.baseFixSize;
-            let img = appData.aFixImage[info.action.index].img;
-            new Fix(img, dispX, dispY, size, size);
-            this.redraw(false);
+            let f = appData.aFixImage[info.action.index];
+            new Fix(f, dispX, dispY);
+            this.redraw();
+        } else if (info.action.type == "runway") {
+            let f = appData.aAirportImage[0];
+            new Runway(dispX, dispY, f.displaySize.w, f.displaySize.h);
+            this.redraw();
+        } else if (info.action.type == "approach") {
+            let f = appData.aAirportImage[1];
+            new Approach(dispX, dispY, f.displaySize.w, f.displaySize.h);
+            this.redraw();
         }
     }
     //---------------------------------------event handlers
@@ -607,6 +719,13 @@ class DisplayContainer extends Container {
             let y = Pos2d.getWorldDistance(delta.y);
             Pos2d.incrementViewCenter(x, y);
             this.redraw(true);
+        } else if (delta.target.type == "dragHandle") {
+            //means we are dragging a dragHandler circle
+            delta.target.containingObject.dragHandle(
+                delta.target.index,
+                delta.x,
+                delta.y
+            );
         } else {
             //console.log(delta.event.target.owner.id);
             let item = appData.getItemFromIconID(delta.target.id);
@@ -618,12 +737,15 @@ class DisplayContainer extends Container {
     clickHandler(details) {
         //console.log(details);
         let item = appData.getItemFromIconID(details.clicktarget.id);
-        if (item && item.type && item.type == "fix") {
+        //console.log(item);
+        //if (item && item.hasOwnProperty("type")) console.log(item.type);
+        if (item && item.type) {
+            //console.log("slct");
             appData.itemSelected = item;
         } else {
             appData.itemSelected = null;
         }
-        this.redraw();
+        this.redraw(true);
     }
     //* ----------- -------------- ------------ DRAWING
     redraw(needsUpdate = false) {
@@ -633,7 +755,6 @@ class DisplayContainer extends Container {
     }
     drawGrid() {
         this.canvas.strokeStyle(appData.displaySettings.gridColor);
-
         this.canvas.weight = 1;
         let extent = 201;
         for (let x = 0; x > -extent; x -= appData.displaySettings.gridSpacing) {

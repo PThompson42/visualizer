@@ -3,7 +3,7 @@ body {
     font-size: 16px;
     margin: 0;
     padding: 0;
-    background-color: black;
+    background-color: #101010;
 }
 /* *--------                 STACK Panes            ----------------*/
 .stack-pane {
@@ -15,7 +15,9 @@ body {
 }
 .stack-pane-title {
     color: #a0a0a0;
-    font-size: 14px;
+    font-size: 11px;
+    font-weight: bold;
+    height: 28px;
 }
 .stack-pane-chgbutton {
     color: lightgrey;
@@ -87,26 +89,50 @@ body {
     border-width: 2px;
     border-style: dotted;
 }
-
-.svgFix {
-    stroke: red;
+/* *--------                 SVG            ----------------*/
+.svgDisplayObject {
+    stroke: #ffff00;
     stroke-width: 2px;
-    stroke-dasharray: 2, 2;
     fill: #00000000;
     opacity: 0;
 }
-.svgFix:hover {
+.svgDisplayObject:hover {
     opacity: 1;
 }
-.svgFix:active {
+.svgDisplayObject:active {
     fill: #ffffff80;
+}
+.highlight {
+    stroke: #ffff00;
+    stroke-dasharray: 5, 5;
+    stroke-width: 2px;
+    fill: #00000000;
+}
+.dragHandle {
+    stroke: yellow;
+    fill: #00000060;
+    stroke-width: 1px;
+}
+.dragHandle:hover {
+    fill: #ffffff60;
+    cursor: crosshair;
+}
+.dragHandle:active {
+    cursor: crosshair;
 }
 /* *--------                OTHER           ----------------*/
 .inputcolor {
-    border-color: #808080;
-    background-color: #808080;
+    background-color: transparent;
     padding: 0px;
     margin: 0px;
+    border-radius: 6px;
+    border: solid;
+    border-color: #808080;
+}
+.dropdown {
+    border: none;
+    color: grey;
+    background-color: #232428;
 }
 /* *--------                Labels/text             ----------------*/
 .obj-label {
