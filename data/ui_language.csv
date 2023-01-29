@@ -1,18 +1,28 @@
-en,fr,de,es
-Working Title,Titre de travail,Arbeitstitel,Titulo del trabajo
-Display Settings,Paramètres d'affichage,Bildschirmeinstellungen,Configuración de pantalla
-Grid,Grille,Netz,Red
-Scale,Escalader,Skala,Escala
-Navaid,Aide à la navigation,Navigationshilfe,ayuda a la navegación
-Airport Related,Liés à l'aéroport,Flughafenbezogen,Relacionado con el aeropuerto
-Runway,Piste,Runway,Pista
-Approach,Approcher,Ansatz,Acercarse
-Grid Spacing,Espacement de la grille,Gitterabstand,Espaciado de la cuadrícula
-Default Fix Size,Taille fixe par défaut,Standard Fixgröße,Tamaño fijo predeterminado
-Colors,Coulers,Farben,Colores
-Start,Début,Start,Comienzo
-Stop,Arrêter,Stoppen,Parada
-Navaid Border,Frontière d'aide à la navigation,Naviid-Grenze,Frontera de ayuda a la navegación
-Navaid Fill, Remplissage d'aide à la navigation,Navigationshilfe ausfüllen,Relleno de ayuda a la navegación
-Runway Border,Bordure de piste,Landebahn-Grenze,Borde de la pista
-Runway Fill,Remplissage de piste,Start- und Landebahn füllen,Relleno de pista
+English,Français,Deutsch,Español,中国人
+Settings,Paramètres,Einstellungen,Ajustes,设置
+Add Mode,Ajouter un mode,Modus hinzufügen,Agregar modo,添加模式
+Edit Mode,Mode édition,Bearbeitungsmodus,Modo de edición,编辑模式
+Animation Mode,Mode d'animation,Animationsmodus,Modo de animación,动画模式
+Interface,Interface,Schnittstelle,Interfaz,界面
+Display,Afficher,Anzeige,Mostrar,展示
+Object Defaults,Valeurs par défaut de l'objet,Objektvorgaben,Valores de objeto,对象默认值
+Mode,Mode,Modus,Modo,模式
+Language,Langue,Sprache,idioma,语言
+Show Grid,Afficher la grille,Raster anzeigen,Mostrar cuadrícula,显示网格
+Show Scale,Afficher l'échelle,Skala anzeigen,Mostrar escala,显示比例
+Background Color,Couleur de l'arrière plan,Hintergrundfarbe,Color de fondo,背景颜色
+Grid Color,Couleur de la grille,Gitterfarbe,Color de cuadrícula,网格颜色
+Navaid,Aide à la navigation,Navigationshilfe,ayuda a la navegación,助航设备
+Airport Related,Liés à l'aéroport,Flughafenbezogen,Relacionado con el aeropuerto,机场相关
+Runway,Piste,Runway,Pista,跑道
+Approach,Approcher,Ansatz,Acercarse,方法
+Grid Spacing,Espacement de la grille,Gitterabstand,Espaciado de la cuadrícula,网格间距
+Default Fix Size,Taille fixe par défaut,Standard Fixgröße,Tamaño fijo predeterminado,默认修复大小
+Start,Début,Start,Comienzo,开始
+Stop,Arrêter,Stoppen,Parada,停止
+Border,Frontière,Grenze,Frontera,边界
+Fill,Remplir,Füllen,Llenar,充满
+Border Weight,Poids de bordure,Rahmengewicht,Peso del borde,边框粗细
+Editable,Modifiable,Bearbeitbar,Editable,可编辑
+Non-editable,Non modifiable,Nicht editierbar,no editable,不可编辑
+Drag and drop items to the canvas,Faites glisser et déposez des éléments sur le canevas,Ziehen Sie Elemente auf die Leinwand und legen Sie sie dort ab,Arrastra y suelta elementos en el lienzo,将项目拖放到画布上
