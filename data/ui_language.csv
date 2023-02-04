@@ -13,16 +13,30 @@ Show Scale,Afficher l'échelle,Skala anzeigen,Mostrar escala,显示比例
 Background Color,Couleur de l'arrière plan,Hintergrundfarbe,Color de fondo,背景颜色
 Grid Color,Couleur de la grille,Gitterfarbe,Color de cuadrícula,网格颜色
 Navaid,Aide à la navigation,Navigationshilfe,ayuda a la navegación,助航设备
-Airport Related,Liés à l'aéroport,Flughafenbezogen,Relacionado con el aeropuerto,机场相关
+Fix,Aide à la navigation,Navigationshilfe,ayuda a la navegación,助航设备
+Airport/Airspace RelatedLiés à l'aéroport/à l'espace aérien,Flughafen/Luftraum bezogen,Relacionado con el aeropuerto/espacio aéreo,机场/空域相关
 Runway,Piste,Runway,Pista,跑道
 Approach,Approcher,Ansatz,Acercarse,方法
 Grid Spacing,Espacement de la grille,Gitterabstand,Espaciado de la cuadrícula,网格间距
-Default Fix Size,Taille fixe par défaut,Standard Fixgröße,Tamaño fijo predeterminado,默认修复大小
+Default Size,Taille par défaut,Standard Größe,Tamaño predeterminado,默认大小
 Start,Début,Start,Comienzo,开始
 Stop,Arrêter,Stoppen,Parada,停止
-Border,Frontière,Grenze,Frontera,边界
-Fill,Remplir,Füllen,Llenar,充满
 Border Weight,Poids de bordure,Rahmengewicht,Peso del borde,边框粗细
 Editable,Modifiable,Bearbeitbar,Editable,可编辑
 Non-editable,Non modifiable,Nicht editierbar,no editable,不可编辑
 Drag and drop items to the canvas,Faites glisser et déposez des éléments sur le canevas,Ziehen Sie Elemente auf die Leinwand und legen Sie sie dort ab,Arrastra y suelta elementos en el lienzo,将项目拖放到画布上
+Dark/Light Mode,Mode sombre/clair,Dunkel/Hell-Modus,Modo oscuro/claro,暗/亮模式
+Stroke,Coup,Schlaganfall,Carrera,中风
+Fill,Remplir,Füllen,Llenar,充满
+Color,Couleur,Farbe,Color,颜色
+Opacity,Opacité,Opazität,Opacidad,不透明度
+Width,Largeur,Breite,Ancho,宽度
+Editor,Éditeur,Editor,Editor,编辑
+Display Layer,Couche d'affichage,Anzeigeebene,Capa de visualización,显示层
+Override Default Size,Remplacer la taille par défaut,Standardgröße überschreiben,Anular tamaño predeterminado,覆盖默认大小
+Weight,Masse,Gewicht,Peso,重量
+Object Type,Type d'objet,Objekttyp,Tipo de objeto,对象类型
+Designator,Désignateur,Bezeichner,Designante,代号
+Delete,Supprimer,Löschen,Borrar,删除
+Route,Itinéraire,Route,Ruta,路线
+# Route Points,# Points d'itinéraire,# Routenpunkte,# Puntos de ruta,# 路线点
