@@ -86,16 +86,18 @@ body {
     transform: translateY(3px);
 }
 .imagebutton3 {
-    background-color: #00000015;
+    background-color: #00000030;
     background-repeat: no-repeat;
     background-size: 32px 32px;
-    border-width: 0px;
+
+    border: none;
     outline: none;
+
     background-position-x: 3px;
     background-position-y: -3px;
 }
 .imagebutton3:hover {
-    background-color: #00000030;
+    background-color: #00000000;
 }
 .imagebutton3:active {
     transform: translateY(3px);
@@ -205,6 +207,9 @@ body {
     stroke-width: 3px;
     fill: #00000000;
 }
+.svgIgnore {
+    opacity: 0;
+}
 .highlight {
     stroke: #ffff00;
     stroke-width: 2px;
@@ -234,6 +239,15 @@ body {
     font-size: 13px;
     color: #474d56;
     font-weight: bold;
+}
+.title {
+    font-size: 16px;
+    color: #1771f8;
+    font-weight: bold;
+    width: 200px;
+    border-bottom: solid;
+    border-color: #1771f8;
+    border-width: 2px;
 }
 .boldit {
     font-weight: bold;
@@ -288,6 +302,16 @@ body {
     border: solid;
     border-color: #b0b0b0;
     text-align: center;
+}
+.text-input {
+    background-color: #e0e0e0;
+    color: #303030;
+    font-size: 14px;
+    border: 1px;
+    border: solid;
+    border-color: #b0b0b0;
+    word-wrap: break-word;
+    word-break: break-all;
 }
 /* *-------- --------------------------------------------------------------*/
 /* *--------                 CUSTOM SLIDER            ----------------*/

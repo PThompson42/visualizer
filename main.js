@@ -12,7 +12,7 @@ const MSGUI = "msgui"
 const MSGSHAPECONTROLS = "msgshapecontrols"
 const MSGOBJECTEDIT = "msgobjectedit"
 const MSGAIRWAYCHANGE = "msgairwaychange"
-
+//last 5FEB0745
 //*------------------------APP DIRECTOR
 class AppDirector extends ApplicationDirector {
     constructor(completedCallback) {
@@ -82,6 +82,18 @@ class AppDirector extends ApplicationDirector {
             this.aAirportImage.push(pic)
         }
 
+        this.aShapeImage = []
+        base = "images/shapes/"
+        let aSurl = ["line", "circle", "polygon", "letter"]
+        for (let i = 0; i < aSurl.length; i++) {
+            let url = base + aSurl[i] + ".png"
+            let pic = await this.loadImage(url)
+            pic.type = aSurl[i]
+            pic.displaySize = { w: 64, h: 64 }
+            if (i == 0) pic.displaySize = { w: 64, h: 20 }
+            this.aShapeImage.push(pic)
+        }
+
         return null
     }
     //* ------------        Display Settings & Mode
@@ -100,9 +112,9 @@ class AppDirector extends ApplicationDirector {
                 fixStrokeColor: "#303030FF",
                 fixFillColor: "#FFFFFF80",
                 fixStrokeWeight: 2,
-                fixFontColor: "#303030",
-                fixFontSize: 20,
-                fixFont: "Arial",
+                labelFontColor: "#00529c",
+                labelFontSize: 20,
+                bShowLabels: false,
                 rwyStrokeColor: "#f0f0f0FF",
                 rwyFillColor: "#232428b0",
                 rwyStrokeWeight: 3,
@@ -111,6 +123,12 @@ class AppDirector extends ApplicationDirector {
                 selectedColor: "#FFFF00",
                 airwayStrokeColor: "#000000",
                 airwayStrokeWeight: 3,
+                suaStrokeColor: "#FFFFFFFF",
+                suaFillColor: "#f91f1f80",
+                suaStrokeWeight: 3,
+                shapeStrokeColor: "#303030FF",
+                shapeFillColor: "#00529c80",
+                shapeStrokeWeight: 2,
             }
             this.saveDisplaySettings()
         }
@@ -245,7 +263,6 @@ class AppDirector extends ApplicationDirector {
                 this.aDisplayObjects
             )
             this.itemSelected = fix
-            this.sendRedraw(false)
         } else if (objType == "runway") {
             let f = this.aAirportImage[0]
             let rwy = new Runway(
@@ -258,7 +275,6 @@ class AppDirector extends ApplicationDirector {
                 this.aDisplayObjects
             )
             this.itemSelected = rwy
-            this.sendRedraw(false)
         } else if (objType == "approach") {
             let f = this.aAirportImage[1]
             let rwy = new Approach(
@@ -271,7 +287,6 @@ class AppDirector extends ApplicationDirector {
                 this.aDisplayObjects
             )
             this.itemSelected = rwy
-            this.sendRedraw(false)
         } else if (objType == "airway") {
             let airway = new Airway(
                 details.locX,
@@ -281,10 +296,58 @@ class AppDirector extends ApplicationDirector {
                 this.aDisplayObjects
             )
             this.itemSelected = airway
-            this.sendRedraw(false)
+        } else if (objType == "sua") {
+            let sua = new Sua(
+                details.locX,
+                details.locY,
+                this.displaySettings,
+                this.dispCnt,
+                this.aDisplayObjects
+            )
+            this.itemSelected = sua
+        } else if (objType == "line") {
+            let item = new LineShape(
+                details.locX,
+                details.locY,
+                this.displaySettings,
+                this.dispCnt,
+                this.aDisplayObjects
+            )
+            this.itemSelected = item
+        } else if (objType == "circle") {
+            let item = new CircleShape(
+                details.locX,
+                details.locY,
+                this.displaySettings,
+                this.dispCnt,
+                this.aDisplayObjects
+            )
+            this.itemSelected = item
+        } else if (objType == "polygon") {
+            let item = new PolygonShape(
+                details.locX,
+                details.locY,
+                this.displaySettings,
+                this.dispCnt,
+                this.aDisplayObjects
+            )
+            this.itemSelected = item
+        } else if (objType == "text") {
+            let item = new TextShape(
+                details.locX,
+                details.locY,
+                this.displaySettings,
+                this.dispCnt,
+                this.aDisplayObjects
+            )
+            this.itemSelected = item
         } else {
             console.log(objType, details)
+            return
         }
+
+        this.sortObjects()
+        this.sendRedraw(false)
         main.itemEditor.activate(this.itemSelected)
     }
     processSettingsChange(setting, details) {
@@ -314,6 +377,11 @@ class AppDirector extends ApplicationDirector {
         } else if (setting == "gridToggle") {
             console.log("gridToggle")
             this.displaySettings.bShowGrid = !this.displaySettings.bShowGrid
+            this.sendRedraw(false)
+            this.saveDisplaySettings()
+        } else if (setting == "labelToggle") {
+            console.log("labelToggle")
+            this.displaySettings.bShowLabels = !this.displaySettings.bShowLabels
             this.sendRedraw(false)
             this.saveDisplaySettings()
         } else {
@@ -354,10 +422,25 @@ class AppDirector extends ApplicationDirector {
             } else if (details.type == "strokeWeight") {
                 this.displaySettings.airwayStrokeWeight = details.value
             }
+        } else if (source == "SUA Defaults") {
+            if (details.type == "strokeColor") {
+                this.displaySettings.suaStrokeColor = details.value
+            } else if (details.type == "fillColor") {
+                this.displaySettings.suaFillColor = details.value
+            } else if (details.type == "strokeWeight") {
+                this.displaySettings.suaStrokeWeight = details.value
+            }
+        } else if (source == "Shape Defaults") {
+            if (details.type == "strokeColor") {
+                this.displaySettings.shapeStrokeColor = details.value
+            } else if (details.type == "fillColor") {
+                this.displaySettings.shapeFillColor = details.value
+            } else if (details.type == "strokeWeight") {
+                this.displaySettings.shapeStrokeWeight = details.value
+            }
         } else {
             source[details.type] = details.value
         }
-
         this.sendRedraw(false)
         this.saveDisplaySettings()
     }
@@ -373,10 +456,21 @@ class AppDirector extends ApplicationDirector {
             this.itemSelected.desig = details
         } else if (setting == "numberPoints") {
             this.itemSelected.changeNumberOfVertices(details)
+        } else if (setting == "changeDash0") {
+            this.itemSelected.dashPattern[0] = Number(details)
+        } else if (setting == "changeDash1") {
+            this.itemSelected.dashPattern[1] = Number(details)
+        } else if (setting == "changeRadius") {
+            this.itemSelected.radius = Number(details)
+        } else if (setting == "changeFontSize") {
+            this.itemSelected.fontSize = Number(details)
+        } else if (setting == "colorFont") {
+            this.itemSelected.fontColor = details
+        } else if (setting == "changeLabelText") {
+            this.itemSelected.text = details
         } else {
             console.log(setting, details)
         }
-
         this.sendRedraw(false)
     }
     processAirwayChange(route) {

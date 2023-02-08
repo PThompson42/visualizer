@@ -247,6 +247,16 @@ body {
     border-color: #b0b0b0;
     text-align: center;
 }
+.text-input {
+    background-color: #e0e0e0;
+    color: #303030;
+    font-size: 14px;
+    border: 1px;
+    border: solid;
+    border-color: #b0b0b0;
+    word-wrap: break-word;
+    word-break: break-all;
+}
 /* *-------- --------------------------------------------------------------*/
 /* *--------                Labels/text             ----------------*/
 /* *-------- --------------------------------------------------------------*/
@@ -258,6 +268,15 @@ body {
     font-size: 14px;
     color: white;
     font-weight: bold;
+}
+.title {
+    font-size: 16px;
+    color: #1771f8;
+    font-weight: bold;
+    width: 200px;
+    border-bottom: solid;
+    border-color: #1771f8;
+    border-width: 2px;
 }
 .boldit {
     font-weight: bold;
