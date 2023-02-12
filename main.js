@@ -12,6 +12,7 @@ import {
     SVGContainer,
     Label,
     BasicButton,
+    HoldButton,
     StackManager,
     Image,
     TextInput,
@@ -37,10 +38,9 @@ import {
     Vector,
     HEX,
     ROUND,
+    fScale,
 } from "ptmath"
-import { KeyHandler } from "ptutil"
-const IMAGEBARWIDTH = 134
-const TOPBARHEIGHT = 28
+import { KeyHandler, removeBreaks } from "ptutil"
 const LEFTBARWIDTH = 60
 const EDITMODE = "editmode"
 const ANIMATEMODE = "animatemode"
@@ -54,6 +54,8 @@ const MSGSHAPECONTROLS = "msgshapecontrols"
 const MSGOBJECTEDIT = "msgobjectedit"
 const MSGAIRWAYCHANGE = "msgairwaychange"
 var main
+//*------------------------JS Extensions
+
 //*------------------------APP DIRECTOR
 class AppDirector extends ApplicationDirector {
     constructor(completedCallback) {
@@ -67,7 +69,7 @@ class AppDirector extends ApplicationDirector {
             this.saveDisplayModeToStorage()
         }
         this.setDisplayMode()
-        //set the current app mode to nothing
+        //set the current applic. mode to nothing
         //TODO set to null - don't show add/edit stuff at startup
         this.appMode = EDITMODE
         //listen for system messages
@@ -93,6 +95,17 @@ class AppDirector extends ApplicationDirector {
         }
         //enable multilingual support
         enableMultilingual(lans, translations)
+        //load the next file in sequence and process
+        this.openFile("data/acperf.txt", this.processACPerf.bind(this))
+    }
+    processACPerf(data) {
+        //create an array to hold the data
+        let dataChunks = data.split("*")
+        //delete first chunk which holds the header
+        dataChunks.shift()
+        //create an array in this to hold the ac perf information
+        this.aACType = []
+        dataChunks.forEach((item) => this.aACType.push(new ACType(item)))
 
         this.setup().then(() => {
             setTimeout(this.completedCallback, 100)
@@ -133,6 +146,32 @@ class AppDirector extends ApplicationDirector {
             pic.displaySize = { w: 64, h: 64 }
             if (i == 0) pic.displaySize = { w: 64, h: 20 }
             this.aShapeImage.push(pic)
+        }
+
+        this.aACImage = []
+        let aPicColor = [
+            "#FFFFFF",
+            "#00B050",
+            "#4472C4",
+            "#C00000",
+            "#FFFF00",
+            "#F4B183",
+            "#F4B1F6",
+            "#000000",
+            "#404040",
+            "#404040",
+            "#404040",
+            "#404040",
+            "#404040",
+            "#404040",
+        ]
+        base = "images/aircraft/"
+        for (let i = 0; i < 13; i++) {
+            let url = base + "AC" + i + ".png"
+            let pic = await this.loadImage(url)
+            pic.color = aPicColor[i]
+            pic.displaySize = { w: 96, h: 96 }
+            this.aACImage.push(pic)
         }
 
         return null
@@ -293,6 +332,7 @@ class AppDirector extends ApplicationDirector {
         }
     }
     addDisplayObject(objType, details) {
+        console.log(objType, details)
         if (objType == "fix") {
             let f = this.aFixImage[details.index]
             let fix = new Fix(
@@ -382,6 +422,18 @@ class AppDirector extends ApplicationDirector {
                 this.aDisplayObjects
             )
             this.itemSelected = item
+        } else if (objType == "aircraft") {
+            let f = this.aACImage[details.index]
+            console.log(f)
+            // let fix = new Fix(
+            //     f,
+            //     details.locX,
+            //     details.locY,
+            //     this.displaySettings,
+            //     this.dispCnt,
+            //     this.aDisplayObjects
+            // )
+            //this.itemSelected = fix
         } else {
             console.log(objType, details)
             return
@@ -416,12 +468,12 @@ class AppDirector extends ApplicationDirector {
             this.appMode = details
             main.useAppMode(this.appMode)
         } else if (setting == "gridToggle") {
-            console.log("gridToggle")
+            //console.log("gridToggle")
             this.displaySettings.bShowGrid = !this.displaySettings.bShowGrid
             this.sendRedraw(false)
             this.saveDisplaySettings()
         } else if (setting == "labelToggle") {
-            console.log("labelToggle")
+            //console.log("labelToggle")
             this.displaySettings.bShowLabels = !this.displaySettings.bShowLabels
             this.sendRedraw(false)
             this.saveDisplaySettings()
@@ -530,7 +582,7 @@ class UI extends UIContainer {
         //set up the display area
         new DisplayContainer("cntDisplay", "")
         //set up quick settings window middle top of the screen
-        new QuickSettingsWindow("cntQuickSettings", "").fixLocation(50, 0)
+        new QuickSettingsWindow("cntQuickSettings", "")
         //create the left bar for adding items
         new VerticalAddWindow("leftAddBar", "")
         //create the Item Settings window
@@ -542,7 +594,7 @@ class UI extends UIContainer {
             "images/ui/close.svg",
             ""
         )
-            .fixLocation(60, 50)
+            .fixLocation(60, 90)
             .centerH()
         //Connect the display container to the Display Object Class
         dispatchMessage("msg-display-connect", null, this.cntDisplay)
@@ -625,6 +677,7 @@ class UI extends UIContainer {
 //*------------------------APP TRIGGER & STARTUP
 function setup() {
     main = new UI(director.displaySettings)
+    window.main = main
     setTimeout(launch, 100)
 }
 function launch() {
@@ -647,6 +700,11 @@ function dispatchMessage(type, setting, value) {
     document.dispatchEvent(e)
 }
 const director = new AppDirector(setup)
+window.director = director
+window.main = main
+window.Pos2d = Pos2d
+window.fScale = fScale
+window.$ = $
 
 //*------------------------User Interface Classes
 class DisplayContainer extends Container {
@@ -685,14 +743,14 @@ class DisplayContainer extends Container {
         //console.log("dX, dY: ", dX, dY);
         let dispX = details.offset.x + dX
         let dispY = details.offset.y + dY
-        if (info.action.type == "fix") {
+        if (info.action.type == "fix" || info.action.type == "aircraft") {
             //console.log("fix dropped at: " + dispX + "," + dispY);
             let d = {
                 index: info.action.index,
                 locX: dispX,
                 locY: dispY,
             }
-            dispatchMessage(MSGADD, "fix", d)
+            dispatchMessage(MSGADD, info.action.type, d)
         } else {
             let d = {
                 index: 0,
@@ -1217,21 +1275,58 @@ class AppSettingsWindow extends DraggableWindow {
 class QuickSettingsWindow extends Div {
     constructor(id, parentid = null) {
         super(id, parentid)
-        this.showOverflow().fixSize(120, 28)
+        this.width = 140
+        this.fullSize = 80
+        this.partSize = 26
+        this.state = "full"
         this.addButtons(id)
+        this.addNavSection(id)
+        this.showOverflow()
+            .fixSize(this.width, this.fullSize)
+            .addClass("top-dialog")
+        this.toggleState()
     }
     addButtons(id) {
         let btnSize = 24
         let x = 0
         let x1 = 0
         let y = 0
-        let y1 = 35
-        //SETTINGS- LABEL and BUTTON
-        this.lblSettings = new Label("", "Settings", id)
-            .fixLocation(x, y1)
+        //explainLabel
+        this.lblExplain = new Label("", "Settings", id)
+            .fixLocation(0, this.fullSize + 2)
             .hide()
             .addClass("info-caption")
             .wrap(false)
+
+        //EDIT
+        new BasicButton("btnEdit", "", id)
+            .fixSize(btnSize, btnSize)
+            .fixLocation(x, this.fullSize - btnSize)
+            .addClass("imagebutton2")
+            .bgImage("images/ui/edit.svg")
+            .addAction("btnEdit")
+            .listenForClicks(this.btnHandler.bind(this))
+            .listenForEnterLeave(
+                this.enterHandler.bind(this),
+                this.leaveHandler.bind(this)
+            )
+        //ANIMATE
+        x += 28
+        new BasicButton("btnAnimation", "", id)
+            .fixSize(btnSize, btnSize)
+            .fixLocation(x, this.fullSize - btnSize)
+            .addClass("imagebutton2")
+            .bgImage("images/ui/animate.svg")
+            .addAction("btnAnimate")
+            .listenForClicks(this.btnHandler.bind(this))
+            .listenForEnterLeave(
+                this.enterHandler.bind(this),
+                this.leaveHandler.bind(this)
+            )
+
+        //SETTINGS- LABEL and BUTTON
+        x = 0
+        y = 0
         new BasicButton("btnSettings", "", id)
             .fixSize(btnSize, btnSize)
             .fixLocation(x, y)
@@ -1244,12 +1339,7 @@ class QuickSettingsWindow extends Div {
                 this.leaveHandler.bind(this)
             )
         //DARK LIGHT mode
-        x += 28
-        this.lblDarkMode = new Label("", "Dark/Light Mode", id)
-            .fixLocation(x, y1)
-            .hide()
-            .addClass("info-caption")
-            .wrap(false)
+        y += 28
         new BasicButton("btnDarkmode", "", id)
             .fixSize(btnSize, btnSize)
             .fixLocation(x, y)
@@ -1263,16 +1353,11 @@ class QuickSettingsWindow extends Div {
                 this.leaveHandler.bind(this)
             )
 
-        //DARK LIGHT mode
-        x += 28
-        this.lblGridToggle = new Label("", "Toggle Grid", id)
-            .fixLocation(x, y1)
-            .hide()
-            .addClass("info-caption")
-            .wrap(false)
+        //Toggle Grid
+        x = 56
         new BasicButton("btnToggleGrid", "", id)
             .fixSize(btnSize, btnSize)
-            .fixLocation(x, y)
+            .fixLocation(x, this.fullSize - btnSize)
             .addClass("imagebutton")
             .bgImage("images/ui/grid.png")
             .bgImageFit()
@@ -1285,14 +1370,9 @@ class QuickSettingsWindow extends Div {
 
         //Show/Hide Labels
         x += 28
-        this.lblLabelToggle = new Label("", "Toggle Labels", id)
-            .fixLocation(x, y1)
-            .hide()
-            .addClass("info-caption")
-            .wrap(false)
         new BasicButton("btnToggleLabel", "", id)
             .fixSize(btnSize, btnSize)
-            .fixLocation(x, y)
+            .fixLocation(x, this.fullSize - btnSize)
             .addClass("imagebutton")
             .bgImage("images/ui/label.svg")
             .bgImageFit()
@@ -1302,48 +1382,71 @@ class QuickSettingsWindow extends Div {
                 this.enterHandler.bind(this),
                 this.leaveHandler.bind(this)
             )
+        //Open and Close buttons
+        new BasicButton("btnOpenQuickSettings", "", id)
+            .fixSize(18, 18)
+            .fixLocation(this.width - btnSize, this.fullSize - btnSize)
+            .addClass("imagebutton2")
+            .bgImage("images/ui/arrow_down.png")
+            .addAction("btnOpen")
+            .listenForClicks(this.btnHandler.bind(this))
 
-        //EDIT
-        x += 28
-        this.lblEdit = new Label("", "Edit Mode", id)
-            .fixLocation(x, y1)
+        new BasicButton("btnCloseQuickSettings", "", id)
+            .fixSize(18, 18)
+            .fixLocation(this.width - btnSize, this.fullSize - btnSize)
+            .addClass("imagebutton2")
+            .bgImage("images/ui/arrow_up.png")
+            .addAction("btnClose")
+            .listenForClicks(this.btnHandler.bind(this))
             .hide()
-            .addClass("info-caption")
-            .wrap(false)
-        new BasicButton("btnEdit", "", id)
+    }
+    addNavSection(id) {
+        let btnSize = 20
+        let x = 32
+        let y = 3
+        let space = 6
+
+        new HoldButton("", "panUP", 0, this.holdHandler.bind(this), "", id)
+            .addClass("imagebutton2")
+            .bgImage("images/ui/pan_up.png")
+            .fixSize(btnSize, btnSize)
+            .fixLocation(x + btnSize, y + space)
+
+        new HoldButton("", "panLEFT", 0, this.holdHandler.bind(this), "", id)
+            .addClass("imagebutton2")
+            .bgImage("images/ui/pan_left.png")
+            .fixSize(btnSize, btnSize)
+            .fixLocation(x, y + btnSize / 2 + space)
+
+        new HoldButton("", "panRIGHT", 0, this.holdHandler.bind(this), "", id)
+            .addClass("imagebutton2")
+            .bgImage("images/ui/pan_right.png")
+            .fixSize(btnSize, btnSize)
+            .fixLocation(x + btnSize * 2, y + btnSize / 2 + space)
+
+        new HoldButton("", "panDOWN", 0, this.holdHandler.bind(this), "", id)
+            .addClass("imagebutton2")
+            .bgImage("images/ui/pan_down.png")
+            .fixSize(btnSize, btnSize)
+            .fixLocation(x + btnSize, y + btnSize + space)
+
+        btnSize = 24
+        x = 100
+        y = 0
+        new HoldButton("", "zoomIn", 0, this.holdHandler.bind(this), "", id)
+            .addClass("imagebutton2")
+            .bgImage("images/ui/zoom_in.png")
             .fixSize(btnSize, btnSize)
             .fixLocation(x, y)
+        new HoldButton("", "zoomOut", 0, this.holdHandler.bind(this), "", id)
             .addClass("imagebutton2")
-            .bgImage("images/ui/edit.svg")
-            .addAction("btnEdit")
-            .listenForClicks(this.btnHandler.bind(this))
-            .listenForEnterLeave(
-                this.enterHandler.bind(this),
-                this.leaveHandler.bind(this)
-            )
-
-        //ANIMATE
-        x += 28
-        this.lblAnimate = new Label("", "Animation Mode", id)
-            .fixLocation(x, y1)
-            .hide()
-            .addClass("info-caption")
-            .wrap(false)
-        new BasicButton("btnAnimation", "", id)
+            .bgImage("images/ui/zoom_out.png")
             .fixSize(btnSize, btnSize)
-            .fixLocation(x, y)
-            .addClass("imagebutton2")
-            .bgImage("images/ui/animate.svg")
-            .addAction("btnAnimate")
-            .listenForClicks(this.btnHandler.bind(this))
-            .listenForEnterLeave(
-                this.enterHandler.bind(this),
-                this.leaveHandler.bind(this)
-            )
+            .fixLocation(x, y + btnSize)
     }
     btnHandler(details) {
         if (details.action == "btnSettings") {
-            this.lblSettings.hide()
+            this.lblExplain.hide()
             dispatchMessage(MSGUI, "dispSettingsWindow")
         } else if (details.action == "darkMode") {
             dispatchMessage(MSGUI, "toggleDarkMode")
@@ -1355,38 +1458,60 @@ class QuickSettingsWindow extends Div {
             dispatchMessage(MSGUI, "changeAppMode", EDITMODE)
         } else if (details.action == "btnAnimate") {
             dispatchMessage(MSGUI, "changeAppMode", ANIMATEMODE)
+        } else if (
+            details.action == "btnClose" ||
+            details.action == "btnOpen"
+        ) {
+            this.toggleState()
         }
+    }
+    holdHandler(details) {
+        if (details.actionType == "zoomOut") {
+            Pos2d.zoomIn()
+        } else if (details.actionType == "zoomIn") {
+            Pos2d.zoomOut()
+        } else if (details.actionType == "panUP") {
+            Pos2d.pan(0, 0.1)
+        } else if (details.actionType == "panLEFT") {
+            Pos2d.pan(0.1, 0)
+        } else if (details.actionType == "panRIGHT") {
+            Pos2d.pan(-0.1, 0)
+        } else if (details.actionType == "panDOWN") {
+            Pos2d.pan(0, -0.1)
+        } else {
+            console.log(details)
+        }
+        dispatchMessage(MSGREDRAW, true)
     }
     enterHandler(details) {
         if (details.action == "btnSettings") {
-            this.lblSettings.show()
+            this.lblExplain.updateText("Settings").show()
         } else if (details.action == "darkMode") {
-            this.lblDarkMode.show()
+            this.lblExplain.updateText("Dark/Light Mode").show()
         } else if (details.action == "gridToggle") {
-            this.lblGridToggle.show()
+            this.lblExplain.updateText("Toggle Grid").show()
         } else if (details.action == "labelToggle") {
-            this.lblLabelToggle.show()
-        } else if (details.action == "btnAdd") {
-            this.lblAdd.show()
+            this.lblExplain.updateText("Toggle Labels").show()
         } else if (details.action == "btnEdit") {
-            this.lblEdit.show()
+            this.lblExplain.updateText("Edit Mode").show()
         } else if (details.action == "btnAnimate") {
-            this.lblAnimate.show()
+            this.lblExplain.updateText("Animation Mode").show()
         }
     }
     leaveHandler(details) {
-        if (details.action == "btnSettings") {
-            this.lblSettings.hide()
-        } else if (details.action == "gridToggle") {
-            this.lblGridToggle.hide()
-        } else if (details.action == "btnEdit") {
-            this.lblEdit.hide()
-        } else if (details.action == "btnAnimate") {
-            this.lblAnimate.hide()
-        } else if (details.action == "darkMode") {
-            this.lblDarkMode.hide()
-        } else if (details.action == "labelToggle") {
-            this.lblLabelToggle.hide()
+        this.lblExplain.hide()
+    }
+    toggleState() {
+        if (this.state == "full") {
+            this.state = "part"
+            this.setY(-(this.fullSize - this.partSize))
+            this.btnOpenQuickSettings.show()
+            this.btnCloseQuickSettings.hide()
+        } else {
+            this.state = "full"
+            this.setY(0)
+            this.btnOpenQuickSettings.hide()
+            this.btnCloseQuickSettings.show()
         }
     }
 }
@@ -1400,6 +1525,7 @@ class VerticalAddWindow extends Div {
         this.addFixPane()
         this.addAirportItemsPane()
         this.addShapesPane()
+        this.addAircraftPane()
     }
     onResize(w, h) {
         this.fixSize(LEFTBARWIDTH, h)
@@ -1601,6 +1727,43 @@ class VerticalAddWindow extends Div {
             )
         pn.openHeight = 185
         //pn.changeState()
+    }
+    addAircraftPane() {
+        let pn = this.stkMgrLeft.addPane("", "")
+        pn.chgButton
+            .bgImage("/images/ui/AC.png")
+            .fixLocation(0, 0)
+            .fixSize(45, 40)
+            .addClass("imagebutton3")
+            .applyStyle("background-size", "40px, 40px")
+            .applyStyle("background-position-x", "-1px")
+            .applyStyle("background-position-y", "0px")
+            .addAction("btnAircraft")
+            .listenForEnterLeave(
+                this.enterHandler.bind(this),
+                this.leaveHandler.bind(this)
+            )
+
+        let x = 0
+        let y = 45
+
+        //add all the fixes
+        for (let i = 0; i < director.aACImage.length; i++) {
+            let p = director.aACImage[i]
+            let img = new Image("", pn.id, p.url)
+                .fixLocation(x, y)
+                .fixSize(36, 34)
+                .setDraggable(true)
+                .addClass("draggable")
+                .addAction({ type: "aircraft", index: i })
+                .enableDragTracking(
+                    this.dragStart.bind(this),
+                    this.dragEnd.bind(this)
+                )
+            y += 38
+        }
+        pn.openHeight = y
+        pn.changeState()
     }
     enterHandler(details) {
         //console.group(details)
@@ -2720,7 +2883,6 @@ class TextEditorSubpanel extends Div {
         return this.masterHeight
     }
 }
-
 //*------------------------Map Item Classes
 class MapItem {
     constructor(displayContainer, displayList, type) {
@@ -2905,10 +3067,11 @@ class Fix extends MapItem {
 
         //show fix designator if needed
         if (this.bShowLabel || this.settings.bShowLabels) {
+            let fontSize = this.settings.labelFontSize * (Pos2d.zoom / 15)
             cv.fillStyle(this.settings.labelFontColor)
             cv.drawText(
                 this.desig,
-                this.settings.labelFontSize,
+                fontSize,
                 this.pos.display.x,
                 this.pos.display.y - dSize * 1.5,
                 false
@@ -3929,5 +4092,313 @@ class TextShape extends MapItem {
         let cv = this.displayContainer.canvas
 
         return cv.getTextSize(this.text, this.fontSize, false).width
+    }
+}
+//*-----------------------Aircraft Related
+class ACType {
+    constructor(dataline) {
+        //console.log(dataline)
+        //split the data into lines
+        let aLines = dataline.split("\n")
+        //first line is blank - delete
+        aLines.shift()
+        //break up the first line and load into appropriate sections
+        let aLineData = aLines.shift().split(",")
+        this.ACType = aLineData.shift()
+        this.Weight = aLineData.shift()
+        this.PrefAlt = Number(aLineData.shift())
+        this.MaxAlt = Number(aLineData.shift())
+        this.MachSpeed = Number(aLineData.shift())
+        this.TurnRate = Number(aLineData.shift())
+        this.FTAS = Number(aLineData.shift())
+        this.MaxDescent = Number(aLineData.shift())
+
+        this.aCruiseSpeed = []
+        this.aClimbSpeed = []
+        this.aDescentSpeed = []
+        this.aClimbRate = []
+        this.aDescentRate = []
+
+        while (aLines.length > 1) {
+            aLineData = aLines.shift().split(",")
+            //dump the first element which just gives the altitude
+            aLineData.shift()
+            this.aCruiseSpeed.push(Number(aLineData.shift()))
+            this.aClimbSpeed.push(Number(aLineData.shift()))
+            this.aClimbRate.push(Number(aLineData.shift()))
+            this.aDescentSpeed.push(Number(aLineData.shift()))
+            this.aDescentRate.push(Number(aLineData.shift()))
+        }
+    }
+    getCruiseSpeed(Altitude) {
+        Altitude = Math.round(Altitude / 100)
+
+        if (Altitude < 30) {
+            return fScale(
+                0,
+                30,
+                Altitude,
+                this.aCruiseSpeed[0],
+                this.aCruiseSpeed[1]
+            )
+        } else if (Altitude < 60) {
+            return fScale(
+                30,
+                60,
+                Altitude,
+                this.aCruiseSpeed[1],
+                this.aCruiseSpeed[2]
+            )
+        } else if (Altitude < 100) {
+            return fScale(
+                60,
+                100,
+                Altitude,
+                this.aCruiseSpeed[2],
+                this.aCruiseSpeed[3]
+            )
+        } else if (Altitude < 200) {
+            return fScale(
+                100,
+                200,
+                Altitude,
+                this.aCruiseSpeed[3],
+                this.aCruiseSpeed[4]
+            )
+        } else if (Altitude < 300) {
+            return fScale(
+                200,
+                300,
+                Altitude,
+                this.aCruiseSpeed[4],
+                this.aCruiseSpeed[5]
+            )
+        } else if (Altitude < 400) {
+            return fScale(
+                300,
+                400,
+                Altitude,
+                this.aCruiseSpeed[5],
+                this.aCruiseSpeed[6]
+            )
+        } else {
+            return this.aCruiseSpeed[6]
+        }
+    }
+    getClimbSpeed(Altitude) {
+        Altitude = Math.round(Altitude / 100)
+        if (Altitude < 30) {
+            return fScale(
+                0,
+                30,
+                Altitude,
+                this.aClimbSpeed[0],
+                this.aClimbSpeed[1]
+            )
+        } else if (Altitude < 60) {
+            return fScale(
+                30,
+                60,
+                Altitude,
+                this.aClimbSpeed[1],
+                this.aClimbSpeed[2]
+            )
+        } else if (Altitude < 100) {
+            return fScale(
+                60,
+                100,
+                Altitude,
+                this.aClimbSpeed[2],
+                this.aClimbSpeed[3]
+            )
+        } else if (Altitude < 200) {
+            return fScale(
+                100,
+                200,
+                Altitude,
+                this.aClimbSpeed[3],
+                this.aClimbSpeed[4]
+            )
+        } else if (Altitude < 300) {
+            return fScale(
+                200,
+                300,
+                Altitude,
+                this.aClimbSpeed[4],
+                this.aClimbSpeed[5]
+            )
+        } else if (Altitude < 400) {
+            return fScale(
+                300,
+                400,
+                Altitude,
+                this.aClimbSpeed[5],
+                this.aClimbSpeed[6]
+            )
+        } else {
+            return this.aClimbSpeed[6]
+        }
+    }
+    getClimbRate(Altitude) {
+        Altitude = Math.round(Altitude / 100)
+        if (Altitude < 30) {
+            return fScale(
+                0,
+                30,
+                Altitude,
+                this.aClimbRate[0],
+                this.aClimbRate[1]
+            )
+        } else if (Altitude < 60) {
+            return fScale(
+                30,
+                60,
+                Altitude,
+                this.aClimbRate[1],
+                this.aClimbRate[2]
+            )
+        } else if (Altitude < 100) {
+            return fScale(
+                60,
+                100,
+                Altitude,
+                this.aClimbRate[2],
+                this.aClimbRate[3]
+            )
+        } else if (Altitude < 200) {
+            return fScale(
+                100,
+                200,
+                Altitude,
+                this.aClimbRate[3],
+                this.aClimbRate[4]
+            )
+        } else if (Altitude < 300) {
+            return fScale(
+                200,
+                300,
+                Altitude,
+                this.aClimbRate[4],
+                this.aClimbRate[5]
+            )
+        } else if (Altitude < 400) {
+            return fScale(
+                300,
+                400,
+                Altitude,
+                this.aClimbRate[5],
+                this.aClimbRate[6]
+            )
+        } else {
+            return this.aClimbRate[6]
+        }
+    }
+    getDescentSpeed(Altitude) {
+        Altitude = Math.round(Altitude / 100)
+        if (Altitude < 30) {
+            return fScale(
+                0,
+                30,
+                Altitude,
+                this.aDescentSpeed[0],
+                this.aDescentSpeed[1]
+            )
+        } else if (Altitude < 60) {
+            return fScale(
+                30,
+                60,
+                Altitude,
+                this.aDescentSpeed[1],
+                this.aDescentSpeed[2]
+            )
+        } else if (Altitude < 100) {
+            return fScale(
+                60,
+                100,
+                Altitude,
+                this.aDescentSpeed[2],
+                this.aDescentSpeed[3]
+            )
+        } else if (Altitude < 200) {
+            return fScale(
+                100,
+                200,
+                Altitude,
+                this.aDescentSpeed[3],
+                this.aDescentSpeed[4]
+            )
+        } else if (Altitude < 300) {
+            return fScale(
+                200,
+                300,
+                Altitude,
+                this.aDescentSpeed[4],
+                this.aDescentSpeed[5]
+            )
+        } else if (Altitude < 400) {
+            return fScale(
+                300,
+                400,
+                Altitude,
+                this.aDescentSpeed[5],
+                this.aDescentSpeed[6]
+            )
+        } else {
+            return this.aDescentSpeed[6]
+        }
+    }
+    getDescentRate(Altitude) {
+        Altitude = Math.round(Altitude / 100)
+        if (Altitude < 30) {
+            return fScale(
+                0,
+                30,
+                Altitude,
+                this.aDescentRate[0],
+                this.aDescentRate[1]
+            )
+        } else if (Altitude < 60) {
+            return fScale(
+                30,
+                60,
+                Altitude,
+                this.aDescentRate[1],
+                this.aDescentRate[2]
+            )
+        } else if (Altitude < 100) {
+            return fScale(
+                60,
+                100,
+                Altitude,
+                this.aDescentRate[2],
+                this.aDescentRate[3]
+            )
+        } else if (Altitude < 200) {
+            return fScale(
+                100,
+                200,
+                Altitude,
+                this.aDescentRate[3],
+                this.aDescentRate[4]
+            )
+        } else if (Altitude < 300) {
+            return fScale(
+                200,
+                300,
+                Altitude,
+                this.aDescentRate[4],
+                this.aDescentRate[5]
+            )
+        } else if (Altitude < 400) {
+            return fScale(
+                300,
+                400,
+                Altitude,
+                this.aDescentRate[5],
+                this.aDescentRate[6]
+            )
+        } else {
+            return this.aDescentRate[6]
+        }
     }
 }

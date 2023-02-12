@@ -57,6 +57,13 @@ body {
     border-width: 0px 0px 1px 0px;
     border-color: #202020;
 }
+.top-dialog {
+    background-color: #00000040;
+    border-style: solid;
+    border-color: #00000080;
+    border-width: 0px 1px 1px 1px;
+    border-radius: 0px 0px 10px 10px;
+}
 /* *-------- --------------------------------------------------------------*/
 /* *--------                 BUTTONS             ----------------*/
 /* *-------- --------------------------------------------------------------*/
@@ -86,7 +93,7 @@ body {
 }
 .imagebutton2:hover {
     transition: 0.3s;
-    transform: scale(1.5);
+    transform: scale(1.25);
 }
 .imagebutton2:active {
     transition: 0.1s;

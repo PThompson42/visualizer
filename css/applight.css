@@ -5,6 +5,9 @@ body {
     padding: 0;
     background-color: #f0f0f0;
 }
+.fillred {
+    fill: "#FF0000";
+}
 /* *-------- --------------------------------------------------------------*/
 /* *--------                 STACK Panes            ----------------*/
 /* *-------- --------------------------------------------------------------*/
@@ -50,6 +53,13 @@ body {
     border-width: 0px 0px 1px 0px;
     border-color: #e0e0e0;
 }
+.top-dialog {
+    background-color: #ffffff20;
+    border-style: solid;
+    border-color: #a0a0a0;
+    border-width: 0px 1px 1px 1px;
+    border-radius: 0px 0px 10px 10px;
+}
 /* *-------- --------------------------------------------------------------*/
 /* *--------                          BUTTONS             ----------------*/
 /* *-------- --------------------------------------------------------------*/
@@ -79,7 +89,7 @@ body {
 }
 .imagebutton2:hover {
     transition: 0.3s;
-    transform: scale(1.5);
+    transform: scale(1.25);
 }
 .imagebutton2:active {
     transition: 0.1s;
@@ -227,6 +237,16 @@ body {
 }
 .dragHandle:active {
     cursor: crosshair;
+}
+.testsvg {
+    stroke: red;
+    fill: green;
+    width: 200px;
+    height: 200px;
+}
+.testsvg:hover {
+    background-color: pink;
+    fill: yellow;
 }
 /* *-------- --------------------------------------------------------------*/
 /* *--------                Labels/text             ----------------*/
