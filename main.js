@@ -29,7 +29,7 @@ import {
     svgPolygon,
     svgRectangle,
     svgPolyline,
-} from "ptui"
+} from "./mod/ptui.1.0.0.mjs"
 import {
     parseColorString,
     Hex2Dec,
@@ -39,11 +39,12 @@ import {
     HEX,
     ROUND,
     fScale,
-} from "ptmath"
-import { KeyHandler, removeBreaks } from "ptutil"
+} from "./mod/ptmath.1.0.0.mjs"
+import { KeyHandler, removeBreaks } from "./mod/ptutil.1.0.0.mjs"
 const LEFTBARWIDTH = 60
 const EDITMODE = "editmode"
 const ANIMATEMODE = "animatemode"
+const FPMODE = "fpmode"
 const MSGSETTINGS = "msgsettings"
 const MSGREDRAW = "msgredraw"
 const MSGADD = "msgadd"
@@ -53,6 +54,10 @@ const MSGUI = "msgui"
 const MSGSHAPECONTROLS = "msgshapecontrols"
 const MSGOBJECTEDIT = "msgobjectedit"
 const MSGAIRWAYCHANGE = "msgairwaychange"
+const MSGWINDCHANGE = "msgwindchange"
+const MSGFLIGHTEDIT = "msgflightedit"
+const MSGTIMING = "msgtiming"
+const MSGTOOLS = "msgtools"
 var main
 //*------------------------JS Extensions
 
@@ -69,9 +74,10 @@ class AppDirector extends ApplicationDirector {
             this.saveDisplayModeToStorage()
         }
         this.setDisplayMode()
-        //set the current applic. mode to nothing
-        //TODO set to null - don't show add/edit stuff at startup
+        //set the current applic. mode to edit mode
         this.appMode = EDITMODE
+        //set the fp editing flag to false
+        this.bEditingFlightPlan = false
         //listen for system messages
         document.addEventListener(
             "systemmessage",
@@ -149,41 +155,39 @@ class AppDirector extends ApplicationDirector {
         }
 
         this.aACImage = []
-        let aPicColor = [
-            "#FFFFFF",
-            "#00B050",
-            "#4472C4",
-            "#C00000",
-            "#FFFF00",
-            "#F4B183",
-            "#F4B1F6",
-            "#000000",
-            "#404040",
-            "#404040",
-            "#404040",
-            "#404040",
-            "#404040",
-            "#404040",
-        ]
         base = "images/aircraft/"
-        for (let i = 0; i < 13; i++) {
+        for (let i = 0; i < 4; i++) {
             let url = base + "AC" + i + ".png"
             let pic = await this.loadImage(url)
-            pic.color = aPicColor[i]
             pic.displaySize = { w: 96, h: 96 }
             this.aACImage.push(pic)
         }
+
+        //create the wind model
+        this.windModel = new WindModel()
+
+        //create the master Timer
+        this.masterTimer = new MasterTimer()
 
         return null
     }
     //* ------------        Display Settings & Mode
     createDisplaySettings() {
         let dis = localStorage.getItem("displaysettings")
+
+        //TODO delete next line - this reloads fresh display settings each time
+        dis = null
+
         if (dis) {
             this.displaySettings = JSON.parse(dis)
         } else {
             this.displaySettings = {
                 bShowGrid: true,
+                bShowTags: true,
+                acStrokeColor: "#548235FF",
+                acStrokeWeight: 2,
+                acFillColor: "#C5E0B480",
+                acTagFontColor: "#FFFFFF",
                 gridSpacing: 5,
                 gridColor: "#ACAAAA",
                 backgroundColor: "#787878",
@@ -209,6 +213,24 @@ class AppDirector extends ApplicationDirector {
                 shapeStrokeColor: "#303030FF",
                 shapeFillColor: "#00529c80",
                 shapeStrokeWeight: 2,
+                acBaseRadius: 15,
+                acBaseTagSize: 14,
+
+                bShowPTL: false,
+                bShowRoute: false,
+                bShowHalo: false,
+                bShowSep: false,
+                bShowScan: false,
+                ptlLength: 2,
+                haloSize: 5,
+                scanRange: 30,
+                sepWarnDistance: 10,
+                sepLossDistance: 5,
+                conflictDetectDistance: 40,
+
+                ptlColor: "#FFFFFF",
+                haloColor: "#20FF20",
+                routeColor: "#C0C0C0",
             }
             this.saveDisplaySettings()
         }
@@ -244,6 +266,7 @@ class AppDirector extends ApplicationDirector {
         this.aDisplayObjects.sort((a, b) => a.layer - b.layer)
         for (let i = 0; i < this.aDisplayObjects.length; i++) {
             this.aDisplayObjects[i].index = i
+            this.aDisplayObjects[i].adjustSVGZ()
         }
     }
     changeBaseFixSize() {
@@ -290,9 +313,41 @@ class AppDirector extends ApplicationDirector {
             this.aDisplayObjects.splice(this.itemSelected.index, 1)
             this.itemSelected = null
             this.sortObjects()
-            this.sendRedraw(false)
+            dispatchMessage(MSGREDRAW, false)
             main.itemEditor.activate(null)
         }
+    }
+    windChangeUpdate() {
+        for (let i = 0; i < this.aDisplayObjects.length; i++) {
+            if (this.aDisplayObjects[i].type == "aircraft") {
+                this.aDisplayObjects[i].calculateStatic()
+            }
+        }
+        dispatchMessage(MSGREDRAW, true)
+    }
+    staticTimeUpdate(dT) {
+        for (let i = 0; i < this.aDisplayObjects.length; i++) {
+            if (this.aDisplayObjects[i].type == "aircraft") {
+                this.aDisplayObjects[i].updateStatic(dT)
+            }
+        }
+        dispatchMessage(MSGREDRAW, true)
+    }
+    resetToZero() {
+        for (let i = 0; i < this.aDisplayObjects.length; i++) {
+            if (this.aDisplayObjects[i].type == "aircraft") {
+                this.aDisplayObjects[i].resetToZero()
+            }
+        }
+        dispatchMessage(MSGREDRAW, true)
+    }
+    setNewZero() {
+        for (let i = 0; i < this.aDisplayObjects.length; i++) {
+            if (this.aDisplayObjects[i].type == "aircraft") {
+                this.aDisplayObjects[i].setNewZero()
+            }
+        }
+        dispatchMessage(MSGREDRAW, true)
     }
     //* ------------        System Messaging Handler
     processSystemMessage(e) {
@@ -300,6 +355,7 @@ class AppDirector extends ApplicationDirector {
         if (e.detail.type == MSGREDRAW) {
             this.sendRedraw(e.detail.setting)
         } else if (e.detail.type == MSGADD) {
+            main.hideClutter()
             this.addDisplayObject(e.detail.setting, e.detail.value)
         } else if (e.detail.type == MSGSETTINGS) {
             this.processSettingsChange(e.detail.setting, e.detail.value)
@@ -310,6 +366,7 @@ class AppDirector extends ApplicationDirector {
         } else if (e.detail.type == MSGUI) {
             this.processUIMessage(e.detail.setting, e.detail.value)
         } else if (e.detail.type == MSGSELECT) {
+            main.hideClutter()
             this.processObjectSelection(e.detail.value)
         } else if (e.detail.type == MSGSHAPECONTROLS) {
             this.processShapeEditingMessage(e.detail.setting, e.detail.value)
@@ -317,6 +374,14 @@ class AppDirector extends ApplicationDirector {
             this.processObjectEditing(e.detail.setting, e.detail.value)
         } else if (e.detail.type == MSGAIRWAYCHANGE) {
             this.processAirwayChange(e.detail.value)
+        } else if (e.detail.type == MSGWINDCHANGE) {
+            this.processWindChange(e.detail.setting, e.detail.value)
+        } else if (e.detail.type == MSGFLIGHTEDIT) {
+            this.processFlightChange(e.detail.setting, e.detail.value)
+        } else if (e.detail.type == MSGTIMING) {
+            this.processTimingMessage(e.detail.setting, e.detail.value)
+        } else if (e.detail.type == MSGTOOLS) {
+            this.processToolsDisplay(e.detail.setting, e.detail.value)
         } else {
             console.log(e.detail)
         }
@@ -332,7 +397,6 @@ class AppDirector extends ApplicationDirector {
         }
     }
     addDisplayObject(objType, details) {
-        console.log(objType, details)
         if (objType == "fix") {
             let f = this.aFixImage[details.index]
             let fix = new Fix(
@@ -424,34 +488,39 @@ class AppDirector extends ApplicationDirector {
             this.itemSelected = item
         } else if (objType == "aircraft") {
             let f = this.aACImage[details.index]
-            console.log(f)
-            // let fix = new Fix(
-            //     f,
-            //     details.locX,
-            //     details.locY,
-            //     this.displaySettings,
-            //     this.dispCnt,
-            //     this.aDisplayObjects
-            // )
-            //this.itemSelected = fix
+            //console.log(f, details)
+            let ac = new Aircraft(
+                details.index,
+                details.locX,
+                details.locY,
+                this.displaySettings,
+                this.dispCnt,
+                this.aDisplayObjects,
+                this.aACType
+            )
+            this.itemSelected = ac
         } else {
             console.log(objType, details)
             return
         }
 
         this.sortObjects()
-        this.sendRedraw(false)
+        dispatchMessage(MSGREDRAW, true)
         main.itemEditor.activate(this.itemSelected)
     }
     processSettingsChange(setting, details) {
-        //console.log(setting, details)
+        console.log(setting, details)
         if (setting == "baseFixSize") {
             this.displaySettings[setting] = details
             this.changeBaseFixSize()
-            this.sendRedraw(false)
+            dispatchMessage(MSGREDRAW, false)
+        } else if (setting == "acBaseRadius") {
+            this.displaySettings[setting] = details
+            this.changeBaseACSize()
+            dispatchMessage(MSGREDRAW, false)
         } else {
             this.displaySettings[setting] = details
-            this.sendRedraw(false)
+            dispatchMessage(MSGREDRAW, false)
         }
         this.saveDisplaySettings()
     }
@@ -465,23 +534,57 @@ class AppDirector extends ApplicationDirector {
                 : (this.darkMode = "light")
             this.setDisplayMode()
         } else if (setting == "changeAppMode") {
+            //console.log(setting, details)
+            if (this.appMode == details) {
+                return
+            }
             this.appMode = details
             main.useAppMode(this.appMode)
+            dispatchMessage(MSGREDRAW, false)
+            main.hideClutter()
         } else if (setting == "gridToggle") {
             //console.log("gridToggle")
             this.displaySettings.bShowGrid = !this.displaySettings.bShowGrid
-            this.sendRedraw(false)
+            dispatchMessage(MSGREDRAW, false)
             this.saveDisplaySettings()
         } else if (setting == "labelToggle") {
             //console.log("labelToggle")
             this.displaySettings.bShowLabels = !this.displaySettings.bShowLabels
-            this.sendRedraw(false)
+            dispatchMessage(MSGREDRAW, false)
             this.saveDisplaySettings()
+        } else if (setting == "windEditorWindow") {
+            main.wnWindEditor.show()
+        } else if (setting == "miniNavWindow") {
+            main.wnMiniNavPanel.toggleVisibility()
+        } else if (setting == "activateFPEditor") {
+            if (this.itemSelected.type != "aircraft") {
+                console.error(
+                    "error, somehow trying to activate FPEditor without a/c selected"
+                )
+                console.log(this.itemSelected)
+                return
+            }
+            //we've selected to edit a FP, so hide info not wanted
+            main.cntQuickSettings.hide()
+            main.leftAddBar.hide()
+            main.itemEditor.hide()
+            main.wnFPEditor.activate(this.itemSelected)
+            this.bEditingFlightPlan = true
+            dispatchMessage(MSGREDRAW, false)
+        } else if (setting == "finishFPEditor") {
+            main.cntQuickSettings.show()
+            main.leftAddBar.show()
+            main.itemEditor.show()
+            this.bEditingFlightPlan = false
+
+            //take other action to update....
+            dispatchMessage(MSGREDRAW, false)
         } else {
             console.log(setting, details)
         }
     }
     processObjectSelection(item) {
+        if (this.bEditingFlightPlan) return
         this.itemSelected = item
         main.itemEditor.activate(item)
     }
@@ -531,10 +634,19 @@ class AppDirector extends ApplicationDirector {
             } else if (details.type == "strokeWeight") {
                 this.displaySettings.shapeStrokeWeight = details.value
             }
+        } else if (source == "Aircraft Defaults") {
+            //console.log(source, details)
+            if (details.type == "strokeColor") {
+                this.displaySettings.acStrokeColor = details.value
+            } else if (details.type == "fillColor") {
+                this.displaySettings.acFillColor = details.value
+            } else if (details.type == "strokeWeight") {
+                this.displaySettings.acStrokeWeight = details.value
+            }
         } else {
             source[details.type] = details.value
         }
-        this.sendRedraw(false)
+        dispatchMessage(MSGREDRAW, false)
         this.saveDisplaySettings()
     }
     processObjectEditing(setting, details) {
@@ -561,15 +673,139 @@ class AppDirector extends ApplicationDirector {
             this.itemSelected.fontColor = details
         } else if (setting == "changeLabelText") {
             this.itemSelected.text = details
+        } else if (setting == "adjustTagSize") {
+            this.itemSelected.tagSizeMult = Number(details)
+        } else if (setting == "adjustTargetSize") {
+            this.itemSelected.targetSizeMult = Number(details)
+            this.itemSelected.changeSize()
         } else {
             console.log(setting, details)
         }
-        this.sendRedraw(false)
+        dispatchMessage(MSGREDRAW, false)
     }
     processAirwayChange(route) {
         main.itemEditor.processAirwayRouteChange()
     }
+    processWindChange(setting, details) {
+        if (setting == "add") {
+            this.windModel.addLayer(details.alt, details.dir, details.spd)
+        } else {
+            this.windModel.layers.splice(details, 1)
+        }
+        main.wnWindEditor.updateWinds(this.windModel)
+        this.windChangeUpdate()
+    }
+    processFlightChange(setting, details) {
+        if (setting == "changeIdent") {
+            this.itemSelected.ident = details
+        } else if (setting == "changeType") {
+            this.itemSelected.changeACType(Number(details))
+        } else if (setting == "changeAltitude") {
+            this.itemSelected.changeAltitude(Number(details))
+        } else {
+            console.log(setting, details)
+        }
+        dispatchMessage(MSGREDRAW, false)
+    }
+    processTimingMessage(setting, value) {
+        //console.log(setting, value)
+        if (setting == "pan-time") {
+            this.masterTimer.increment(value)
+            this.staticTimeUpdate(value)
+        } else if (setting == "resetToZero") {
+            this.masterTimer.resetToZero()
+            this.resetToZero()
+        } else if (setting == "setZero") {
+            this.masterTimer.resetToZero()
+            this.setNewZero()
+        }
+    }
+    processToolsDisplay(setting, value) {
+        //console.log(setting, value)
+        if (setting == "toggler") {
+            this.displaySettings[value] = !this.displaySettings[value]
+        } else {
+            this.displaySettings[setting] = value
+            //console.log(setting, value)
+        }
+        dispatchMessage(MSGREDRAW, false)
+    }
 }
+class MasterTimer {
+    constructor() {
+        this.currentTime = 0 //in seconds
+    }
+    get timeText() {
+        let t = this.calculateHMS(this.currentTime)
+
+        let m = String(t.m)
+        if (m.length < 2) m = "0" + m
+
+        let s = String(Math.round(t.s))
+        if (s.length < 2) s = "0" + s
+
+        let text = t.h + ":" + m + ":" + s
+        if (this.currentTime < 0) {
+            text = "-" + text
+        }
+
+        return text
+    }
+    calculateHMS(time) {
+        let t = Math.abs(time)
+
+        let h = Math.floor(t / 3600)
+        t -= h * 3600
+
+        let m = Math.floor(t / 60)
+        t -= m * 60
+
+        return {
+            h: h,
+            m: m,
+            s: t,
+        }
+    }
+    increment(val) {
+        this.currentTime += val
+        main.wnTimeControl.updateDisplay(this.timeText)
+    }
+    resetToZero() {
+        this.currentTime = 0 //in seconds
+        main.wnTimeControl.updateDisplay(this.timeText)
+    }
+}
+//*------------------------APP TRIGGER & STARTUP
+function setup() {
+    main = new UI(director.displaySettings)
+    window.main = main
+    setTimeout(launch, 100)
+}
+function launch() {
+    console.log(`Application started: ${new Date().toString()}`)
+    clearLoadingAssets()
+    dispatchMessage(MSGREDRAW, true)
+}
+function clearLoadingAssets() {
+    let a = $("msg1")
+    a.parentNode.removeChild(a)
+    //window.removeEventListener("load", clearLoadingAssets);
+}
+function dispatchMessage(type, setting, value) {
+    let d = {
+        type: type,
+        setting: setting,
+        value: value,
+    }
+    let e = new CustomEvent("systemmessage", { detail: d })
+    document.dispatchEvent(e)
+}
+const director = new AppDirector(setup)
+window.director = director
+window.main = main
+window.Pos2d = Pos2d
+window.fScale = fScale
+window.$ = $
 //*------------------------User Interface
 class UI extends UIContainer {
     constructor(displaySettings) {
@@ -582,7 +818,7 @@ class UI extends UIContainer {
         //set up the display area
         new DisplayContainer("cntDisplay", "")
         //set up quick settings window middle top of the screen
-        new QuickSettingsWindow("cntQuickSettings", "")
+        new QuickSettingsWindow("cntQuickSettings", "").setMode(EDITMODE)
         //create the left bar for adding items
         new VerticalAddWindow("leftAddBar", "")
         //create the Item Settings window
@@ -596,6 +832,22 @@ class UI extends UIContainer {
         )
             .fixLocation(60, 90)
             .centerH()
+        //create the draggable wind editor
+        new WindEditor("wnWindEditor", "images/ui/close.svg", "")
+            .fixLocation(100, 120)
+            .centerH()
+            .title("Wind Editor")
+        //create the timeline Window
+        new TimeControlWindow("wnTimeControl", "")
+
+        //add the route editing panel
+        new FPEditor("wnFPEditor", "images/ui/close.svg", "")
+            .fixLocation(100, 420)
+            .centerH()
+            .title("Flight Plan Editor")
+
+        new MiniNavPanel("wnMiniNavPanel", "").hide()
+
         //Connect the display container to the Display Object Class
         dispatchMessage("msg-display-connect", null, this.cntDisplay)
         //Set up the initial zoom value
@@ -607,8 +859,6 @@ class UI extends UIContainer {
         // this.animStart();
         //resize everything to the screen
         this.onResizeEvent()
-
-        //test = new ShapeEditor('editShape', false, '').fixLocation(200, 200)
     }
     onResizeEvent() {
         this.w = this.getWidth()
@@ -617,6 +867,26 @@ class UI extends UIContainer {
         this.leftAddBar.onResize(this.w, this.h)
         this.cntQuickSettings.centerH()
         this.itemEditor.onResize(this.w, this.h)
+
+        //adjust the location of the timeline window to bottom of screen
+        this.wnTimeControl
+            .fixLocation(0, this.h - this.wnTimeControl.getHeight())
+            .centerH()
+
+        //check if any draggable windows offscreen
+        let draggables = ["wnSettings", "wnWindEditor", "wnFPEditor"]
+        draggables.forEach((item) => {
+            let w = $(item)
+            if (w.x + w.w < 0) {
+                w.setX(0)
+            } else if (w.y + w.h < 0) {
+                w.setY(0)
+            } else if (w.x > this.w) {
+                w.setX(this.w - w.w)
+            } else if (w.y > this.h) {
+                w.setY(this.h - w.h)
+            }
+        })
     }
     newFrame() {
         //clear the canvas
@@ -627,12 +897,15 @@ class UI extends UIContainer {
         if (mode == EDITMODE) {
             this.leftAddBar.show()
             this.itemEditor.show()
+            this.wnTimeControl.show()
         } else if (mode == ANIMATEMODE) {
             this.leftAddBar.hide()
             this.itemEditor.hide()
+            this.wnTimeControl.hide()
         }
+        this.cntQuickSettings.setMode(mode)
     }
-    //TODO ------------Deal with RIGHT SIDE animation items
+
     addAnimatePane() {
         let pn = this.stkRight.addPane("pnAnimate", "Animation")
         new BasicButton("", "Start", pn.id)
@@ -672,40 +945,9 @@ class UI extends UIContainer {
     hideClutter() {
         //a way to close stuff that should be closed
         this.wnSettings.hide()
+        this.wnWindEditor.hide()
     }
 }
-//*------------------------APP TRIGGER & STARTUP
-function setup() {
-    main = new UI(director.displaySettings)
-    window.main = main
-    setTimeout(launch, 100)
-}
-function launch() {
-    console.log(`Application started: ${new Date().toString()}`)
-    clearLoadingAssets()
-    dispatchMessage(MSGREDRAW, true)
-}
-function clearLoadingAssets() {
-    let a = $("msg1")
-    a.parentNode.removeChild(a)
-    //window.removeEventListener("load", clearLoadingAssets);
-}
-function dispatchMessage(type, setting, value) {
-    let d = {
-        type: type,
-        setting: setting,
-        value: value,
-    }
-    let e = new CustomEvent("systemmessage", { detail: d })
-    document.dispatchEvent(e)
-}
-const director = new AppDirector(setup)
-window.director = director
-window.main = main
-window.Pos2d = Pos2d
-window.fScale = fScale
-window.$ = $
-
 //*------------------------User Interface Classes
 class DisplayContainer extends Container {
     constructor(id, parentid) {
@@ -759,36 +1001,6 @@ class DisplayContainer extends Container {
             }
             dispatchMessage(MSGADD, info.action.type, d)
         }
-
-        // else if (info.action.type == "runway") {
-        //     let d = {
-        //         index: 0,
-        //         locX: dispX,
-        //         locY: dispY,
-        //     }
-        //     dispatchMessage(MSGADD, "runway", d)
-        // } else if (info.action.type == "approach") {
-        //     let d = {
-        //         index: 0,
-        //         locX: dispX,
-        //         locY: dispY,
-        //     }
-        //     dispatchMessage(MSGADD, "approach", d)
-        // } else if (info.action.type == "airway") {
-        //     let d = {
-        //         index: 0,
-        //         locX: dispX,
-        //         locY: dispY,
-        //     }
-        //     dispatchMessage(MSGADD, "airway", d)
-        // } else if (info.action.type == "sua") {
-        //     let d = {
-        //         index: 0,
-        //         locX: dispX,
-        //         locY: dispY,
-        //     }
-        //     dispatchMessage(MSGADD, "sua", d)
-        // }
     }
     //---------------------------------------event handlers
     wheelHandler(delta) {
@@ -808,11 +1020,16 @@ class DisplayContainer extends Container {
             dispatchMessage(MSGREDRAW, true)
         } else if (delta.target.type == "dragHandle") {
             //means we are dragging a dragHandler circle
-            delta.target.containingObject.dragHandle(
-                delta.target.index,
-                delta.x,
-                delta.y
-            )
+            let item = delta.target.containingObject
+            item.dragHandle(delta.target.index, delta.x, delta.y)
+        } else if (delta.target.type == "datatag") {
+            //means we are dragging a datatag
+            //console.log(delta.target)
+            delta.target.containingObject.dragTag(delta.x, delta.y)
+            dispatchMessage(MSGREDRAW, false)
+        } else if (delta.target.type == "rotateHandle") {
+            let ac = delta.target.containingObject
+            ac.rotate(delta.x, delta.y)
         } else {
             //console.log(delta.event.target.owner.id);
             let item = director.getItemFromIconID(delta.target.id)
@@ -830,7 +1047,21 @@ class DisplayContainer extends Container {
             dispatchMessage(MSGSELECT, null, item)
         } else if (
             details.clicktarget &&
+            details.clicktarget.type == "datatag"
+        ) {
+            // dispatchMessage(
+            //     MSGSELECT,
+            //     null,
+            //     details.clicktarget.containingObject
+            // )
+        } else if (
+            details.clicktarget &&
             details.clicktarget.action == "dragHandle"
+        ) {
+            //do nothing because it is still selected
+        } else if (
+            details.clicktarget &&
+            details.clicktarget.action == "rotateHandle"
         ) {
             //do nothing because it is still selected
         } else {
@@ -908,24 +1139,34 @@ class AppSettingsWindow extends DraggableWindow {
         this.addInterfaceSection(uid)
         this.addDisplaySection(uid)
         this.addDefaultsSection(uid)
+        this.addToolsSection(uid)
+
+        this.clickHandler({ action: "btnTools" })
     }
     addControlButtons(id) {
         //add mini buttons down left for groups of items
         this.btnInterface = new BasicButton("", "Interface", id)
-            .fixLocation(5, 40)
+            .fixLocation(5, 35)
             .addClass("min-button")
             .addAction("btnInterface")
             .listenForClicks(this.clickHandler.bind(this))
         this.btnDisplaySettings = new BasicButton("", "Display", id)
-            .fixLocation(5, 65)
+            .fixLocation(5, 60)
             .addClass("min-button")
             .addAction("btnDisplaySettings")
             .listenForClicks(this.clickHandler.bind(this))
         this.btnDefaultSettings = new BasicButton("", "Object Defaults", id)
-            .fixLocation(5, 90)
+            .fixLocation(5, 85)
             .setWidth(95)
             .addClass("min-button")
             .addAction("btnDefaultSettings")
+            .listenForClicks(this.clickHandler.bind(this))
+
+        this.btnTools = new BasicButton("", "Target Tools", id)
+            .fixLocation(5, 125)
+            .setWidth(95)
+            .addClass("min-button")
+            .addAction("btnTools")
             .listenForClicks(this.clickHandler.bind(this))
     }
     addInterfaceSection(id) {
@@ -1018,9 +1259,9 @@ class AppSettingsWindow extends DraggableWindow {
         y += 35
         new Slider(
             "",
-            5,
-            100,
-            5,
+            1,
+            50,
+            1,
             this.displaySettings.gridSpacing,
             this.cntDisplaySettings.id
         )
@@ -1075,17 +1316,227 @@ class AppSettingsWindow extends DraggableWindow {
             .fixSize(200, 350)
             .autoOverflow()
             .hide()
-        this.addNavaidsSection()
-        this.addRunwaySection()
-        this.addApproachSection()
-        this.addAirwaySection()
-        this.addSUASection()
-        this.addShapeSection()
+
+        let y = this.addAircraftSection()
+        y = this.addNavaidsSection(y)
+        y = this.addRunwaySection(y)
+        y = this.addApproachSection(y)
+        y = this.addAirwaySection(y)
+        y = this.addSUASection(y)
+        y = this.addShapeSection(y)
     }
-    addNavaidsSection() {
+    addToolsSection(id) {
+        this.cntTools = new Div("", id)
+            .fixLocation(100, 22)
+            .fixSize(200, 250)
+            .hide()
+
+        let x = 3
+        let y = 5
+        let x2 = 55
+
+        let pid = this.cntTools.id
+
+        //PTL Length
+        new Label("", "PTL Length", pid)
+            .addClass("obj-label")
+            .fixLocation(x2, y + 4)
+        new NumberInput("", pid)
+            .fixLocation(0, y)
+            .fixSize(50, 20)
+            .addClass("text-input")
+            .setParms(1, 20, 1)
+            .setValue(this.displaySettings.ptlLength)
+            .addAction("ptlLength")
+            .listenForChanges(this.toolsHandler.bind(this))
+
+        //PTL Color
+        y += 25
+        new Label("", "PTL Color", pid)
+            .addClass("obj-label")
+            .fixLocation(x2, y + 4)
+        new ColorInput("", pid, this.displaySettings.ptlColor)
+            .fixLocation(0, y)
+            .fixSize(50, 25)
+            .addAction("ptlColor")
+            .addClass("inputcolor")
+            .listenForChanges(this.toolsHandler.bind(this))
+
+        //HALO Length
+        y += 30
+        new Label("", "HALO Size", pid)
+            .addClass("obj-label")
+            .fixLocation(x2, y + 4)
+        new NumberInput("", pid)
+            .fixLocation(0, y)
+            .fixSize(50, 20)
+            .addClass("text-input")
+            .setParms(0.5, 5, 0.5)
+            .setValue(this.displaySettings.haloSize)
+            .addAction("haloSize")
+            .listenForChanges(this.toolsHandler.bind(this))
+
+        //Halo Color
+        y += 25
+        new Label("", "HALO Color", pid)
+            .addClass("obj-label")
+            .fixLocation(x2, y + 4)
+        new ColorInput("", pid, this.displaySettings.haloColor)
+            .fixLocation(0, y)
+            .fixSize(50, 25)
+            .addAction("haloColor")
+            .addClass("inputcolor")
+            .listenForChanges(this.toolsHandler.bind(this))
+
+        //Route Color
+        y += 30
+        new Label("", "Route Color", pid)
+            .addClass("obj-label")
+            .fixLocation(x2, y + 4)
+        new ColorInput("", pid, this.displaySettings.routeColor)
+            .fixLocation(0, y)
+            .fixSize(50, 25)
+            .addAction("routeColor")
+            .addClass("inputcolor")
+            .listenForChanges(this.toolsHandler.bind(this))
+
+        //Scan Range
+        y += 30
+        new Label("", "SUA Scan Range", pid)
+            .addClass("obj-label")
+            .fixLocation(x2, y + 4)
+        new NumberInput("", pid)
+            .fixLocation(0, y)
+            .fixSize(50, 20)
+            .addClass("text-input")
+            .setParms(10, 100, 5)
+            .setValue(this.displaySettings.scanRange)
+            .addAction("scanRange")
+            .listenForChanges(this.toolsHandler.bind(this))
+
+        //Separation Warning Distancee
+        y += 25
+        new Label("", "SEP Warning Distance", pid)
+            .addClass("obj-label")
+            .fixLocation(x2, y + 4)
+        new NumberInput("", pid)
+            .fixLocation(0, y)
+            .fixSize(50, 20)
+            .addClass("text-input")
+            .setParms(3, 20, 1)
+            .setValue(this.displaySettings.sepWarnDistance)
+            .addAction("sepWarnDistance")
+            .listenForChanges(this.toolsHandler.bind(this))
+
+        //Separation Loss Distance
+        y += 25
+        new Label("", "SEP Loss Distance", pid)
+            .addClass("obj-label")
+            .fixLocation(x2, y + 4)
+        new NumberInput("", pid)
+            .fixLocation(0, y)
+            .fixSize(50, 20)
+            .addClass("text-input")
+            .setParms(0.5, 10, 0.5)
+            .setValue(this.displaySettings.sepLossDistance)
+            .addAction("sepLossDistance")
+            .listenForChanges(this.toolsHandler.bind(this))
+
+        //Conflict Detect Distance
+        y += 25
+        new Label("", "Conflict Detect Range", pid)
+            .addClass("obj-label")
+            .fixLocation(x2, y + 4)
+        new NumberInput("", pid)
+            .fixLocation(0, y)
+            .fixSize(50, 20)
+            .addClass("text-input")
+            .setParms(5, 100, 5)
+            .setValue(this.displaySettings.conflictDetectDistance)
+            .addAction("conflictDetectDistance")
+            .listenForChanges(this.toolsHandler.bind(this))
+    }
+    addAircraftSection() {
         //CONFIGURE NAVAIDS SECTION
         let x = 0
         let y = 5
+        new Label("", "Aircraft", this.cntDefaultSettings.id)
+            .addClass("title")
+            .fixLocation(x, y)
+
+        y += 30
+        new Label("", "Default Size", this.cntDefaultSettings.id)
+            .addClass("obj-label")
+            .fixLocation(10, y)
+        new Slider(
+            "",
+            5,
+            100,
+            1,
+            this.displaySettings.acBaseRadius,
+            this.cntDefaultSettings.id
+        )
+            .fixLocation(10, y + 15)
+            .setWidth(140)
+            .listenForInput(this.sliderHandler.bind(this))
+            .addAction("acBaseRadius")
+            .addClass("slider")
+
+        y += 40
+        new Label("", "Datatag Size", this.cntDefaultSettings.id)
+            .addClass("obj-label")
+            .fixLocation(10, y)
+        new Slider(
+            "",
+            5,
+            100,
+            1,
+            this.displaySettings.acBaseTagSize,
+            this.cntDefaultSettings.id
+        )
+            .fixLocation(10, y + 15)
+            .setWidth(140)
+            .listenForInput(this.sliderHandler.bind(this))
+            .addAction("acBaseTagSize")
+            .addClass("slider")
+
+        y += 40
+        let s = new ShapeEditor(
+            "",
+            false,
+            this.cntDefaultSettings.id
+        ).fixLocation(x, y)
+        s.activate(
+            "Aircraft Defaults",
+            true,
+            this.displaySettings.acStrokeColor,
+            this.displaySettings.acStrokeWeight,
+            this.displaySettings.acFillColor
+        )
+        y += 130
+        //Background Color
+        let c = new ColorInput(
+            "",
+            this.cntDefaultSettings.id,
+            this.displaySettings.acTagFontColor
+        )
+            .fixLocation(x, y)
+            .fixSize(40, 26)
+            .addAction("acTagFontColor")
+            .addClass("inputcolor")
+            .listenForChanges(this.colorHandler.bind(this))
+        new Label("", "Tag Font Color", this.cntDefaultSettings.id)
+            .addClass("obj-label")
+            .fixLocation(55, y + 5)
+            .labelFor(c.id)
+        y += 32
+
+        return y
+    }
+    addNavaidsSection(y) {
+        //CONFIGURE NAVAIDS SECTION
+        let x = 0
+
         new Label("", "Navaid", this.cntDefaultSettings.id)
             .addClass("title")
             .fixLocation(x, y)
@@ -1124,10 +1575,10 @@ class AppSettingsWindow extends DraggableWindow {
 
         //Fix Size
         y += 130
+        return y
     }
-    addRunwaySection() {
+    addRunwaySection(y) {
         let x = 5
-        let y = 195
         new Label("", "Runway", this.cntDefaultSettings.id)
             .addClass("title")
             .fixLocation(x, y)
@@ -1144,10 +1595,11 @@ class AppSettingsWindow extends DraggableWindow {
             this.displaySettings.rwyStrokeWeight,
             this.displaySettings.rwyFillColor
         )
+        y += 130
+        return y
     }
-    addApproachSection() {
+    addApproachSection(y) {
         let x = 5
-        let y = 345
         new Label("", "Approach", this.cntDefaultSettings.id)
             .addClass("title")
             .fixLocation(x, y)
@@ -1164,10 +1616,11 @@ class AppSettingsWindow extends DraggableWindow {
             this.displaySettings.approachStrokeColor,
             this.displaySettings.approachStrokeWeight
         )
+        y += 130
+        return y
     }
-    addAirwaySection() {
+    addAirwaySection(y) {
         let x = 5
-        let y = 500
         new Label("", "Airway", this.cntDefaultSettings.id)
             .addClass("title")
             .fixLocation(x, y)
@@ -1184,10 +1637,11 @@ class AppSettingsWindow extends DraggableWindow {
             this.displaySettings.airwayStrokeColor,
             this.displaySettings.airwayStrokeWeight
         )
+        y += 130
+        return y
     }
-    addSUASection() {
+    addSUASection(y) {
         let x = 5
-        let y = 660
         new Label("", "SUA", this.cntDefaultSettings.id)
             .addClass("title")
             .fixLocation(x, y)
@@ -1205,10 +1659,11 @@ class AppSettingsWindow extends DraggableWindow {
             this.displaySettings.suaStrokeWeight,
             this.displaySettings.suaFillColor
         )
+        y += 130
+        return y
     }
-    addShapeSection() {
+    addShapeSection(y) {
         let x = 5
-        let y = 815
         new Label("", "Shapes", this.cntDefaultSettings.id)
             .addClass("title")
             .fixLocation(x, y)
@@ -1226,127 +1681,157 @@ class AppSettingsWindow extends DraggableWindow {
             this.displaySettings.shapeStrokeWeight,
             this.displaySettings.shapeFillColor
         )
+        y += 130
+        return y
     }
     clickHandler(details) {
+        //console.log(details)
         if (details.action == "wnSettings:close") {
             this.hide()
         } else if (details.action == "btnInterface") {
             this.btnInterface.addClass("min-selected")
             this.btnDisplaySettings.removeClass("min-selected")
             this.btnDefaultSettings.removeClass("min-selected")
-            this.fixSize(300, 140)
+            this.btnTools.removeClass("min-selected")
+            this.fixSize(300, 160)
             this.cntInterfaceSettings.show()
             this.cntDisplaySettings.hide()
             this.cntDefaultSettings.hide()
+            this.cntTools.hide()
         } else if (details.action == "btnDisplaySettings") {
             this.btnInterface.removeClass("min-selected")
             this.btnDisplaySettings.addClass("min-selected")
             this.btnDefaultSettings.removeClass("min-selected")
-            this.fixSize(300, 250)
+            this.btnTools.removeClass("min-selected")
+            this.fixSize(300, 275)
             this.cntInterfaceSettings.hide()
             this.cntDisplaySettings.show()
             this.cntDefaultSettings.hide()
+            this.cntTools.hide()
         } else if (details.action == "btnDefaultSettings") {
             this.btnInterface.removeClass("min-selected")
             this.btnDisplaySettings.removeClass("min-selected")
             this.btnDefaultSettings.addClass("min-selected")
+            this.btnTools.removeClass("min-selected")
             this.fixSize(300, 375)
             this.cntInterfaceSettings.hide()
             this.cntDisplaySettings.hide()
             this.cntDefaultSettings.show()
+            this.cntTools.hide()
+        } else if (details.action == "btnTools") {
+            this.btnInterface.removeClass("min-selected")
+            this.btnDisplaySettings.removeClass("min-selected")
+            this.btnDefaultSettings.removeClass("min-selected")
+            this.btnTools.addClass("min-selected")
+            this.fixSize(300, 285)
+            this.cntInterfaceSettings.hide()
+            this.cntDisplaySettings.hide()
+            this.cntDefaultSettings.hide()
+            this.cntTools.show()
         }
     }
     changeHandler(details) {
         if (details.action == "langDropdown") {
             changeLanguage(Number(details.sender.getSelection().index))
         } else {
+            //console.log(details)
             dispatchMessage(MSGSETTINGS, details.action, details.value)
         }
+    }
+    toolsHandler(details) {
+        dispatchMessage(MSGTOOLS, details.action, details.value)
     }
     colorHandler(details) {
         dispatchMessage(MSGSETTINGS, details.action, details.value)
     }
     sliderHandler(details) {
-        //console.log(details)
-        //console.log(details);
         dispatchMessage(MSGSETTINGS, details.action, Number(details.value))
     }
 }
 class QuickSettingsWindow extends Div {
     constructor(id, parentid = null) {
         super(id, parentid)
-        this.width = 140
-        this.fullSize = 80
-        this.partSize = 26
+
+        this.fixSize(380, 26)
         this.state = "full"
         this.addButtons(id)
-        this.addNavSection(id)
+
         this.showOverflow()
-            .fixSize(this.width, this.fullSize)
-            .addClass("top-dialog")
-        this.toggleState()
     }
     addButtons(id) {
         let btnSize = 24
-        let x = 0
-        let x1 = 0
-        let y = 0
+        let dist = 32
         //explainLabel
         this.lblExplain = new Label("", "Settings", id)
-            .fixLocation(0, this.fullSize + 2)
             .hide()
             .addClass("info-caption")
             .wrap(false)
 
+        //SETTINGS- LABEL and BUTTON
+        let x = 0
+        let y = 0
+        new BasicButton("btnSettings", "", id)
+            .fixSize(btnSize, btnSize)
+            .fixLocation(x, y)
+            .addClass("imagebutton")
+            .bgImage("images/ui/settings.svg")
+            .addAction({ detail: "btnSettings", x: x })
+            .listenForClicks(this.btnHandler.bind(this))
+            .listenForEnterLeave(
+                this.enterHandler.bind(this),
+                this.leaveHandler.bind(this)
+            )
         //EDIT
+        x += dist
         new BasicButton("btnEdit", "", id)
             .fixSize(btnSize, btnSize)
             .fixLocation(x, this.fullSize - btnSize)
-            .addClass("imagebutton2")
+            .addClass("imagebutton")
             .bgImage("images/ui/edit.svg")
-            .addAction("btnEdit")
+            .addAction({ detail: "btnEdit", x: x })
             .listenForClicks(this.btnHandler.bind(this))
             .listenForEnterLeave(
                 this.enterHandler.bind(this),
                 this.leaveHandler.bind(this)
             )
         //ANIMATE
-        x += 28
+        x += dist
         new BasicButton("btnAnimation", "", id)
             .fixSize(btnSize, btnSize)
             .fixLocation(x, this.fullSize - btnSize)
-            .addClass("imagebutton2")
+            .addClass("imagebutton")
             .bgImage("images/ui/animate.svg")
-            .addAction("btnAnimate")
+            .addAction({ detail: "btnAnimate", x: x })
             .listenForClicks(this.btnHandler.bind(this))
             .listenForEnterLeave(
                 this.enterHandler.bind(this),
                 this.leaveHandler.bind(this)
             )
 
-        //SETTINGS- LABEL and BUTTON
-        x = 0
-        y = 0
-        new BasicButton("btnSettings", "", id)
-            .fixSize(btnSize, btnSize)
-            .fixLocation(x, y)
-            .addClass("imagebutton2")
-            .bgImage("images/ui/settings.svg")
-            .addAction("btnSettings")
-            .listenForClicks(this.btnHandler.bind(this))
-            .listenForEnterLeave(
-                this.enterHandler.bind(this),
-                this.leaveHandler.bind(this)
-            )
         //DARK LIGHT mode
-        y += 28
+        x += dist
         new BasicButton("btnDarkmode", "", id)
             .fixSize(btnSize, btnSize)
             .fixLocation(x, y)
             .addClass("imagebutton")
             .bgImage("images/ui/darkmode.svg")
             .bgImageFit()
-            .addAction("darkMode")
+            .addAction({ detail: "darkMode", x: x })
+            .listenForClicks(this.btnHandler.bind(this))
+            .listenForEnterLeave(
+                this.enterHandler.bind(this),
+                this.leaveHandler.bind(this)
+            )
+
+        //Toggle Mini Nav Panel
+        x += dist
+        new BasicButton("btnToggleMiniNav", "", id)
+            .fixSize(btnSize, btnSize)
+            .fixLocation(x, this.fullSize - btnSize)
+            .addClass("imagebutton")
+            .bgImage("images/ui/mini-nav.png")
+            .bgImageFit()
+            .addAction({ detail: "toggleMiniNav", x: x })
             .listenForClicks(this.btnHandler.bind(this))
             .listenForEnterLeave(
                 this.enterHandler.bind(this),
@@ -1354,14 +1839,14 @@ class QuickSettingsWindow extends Div {
             )
 
         //Toggle Grid
-        x = 56
+        x += dist
         new BasicButton("btnToggleGrid", "", id)
             .fixSize(btnSize, btnSize)
             .fixLocation(x, this.fullSize - btnSize)
             .addClass("imagebutton")
             .bgImage("images/ui/grid.png")
             .bgImageFit()
-            .addAction("gridToggle")
+            .addAction({ detail: "gridToggle", x: x })
             .listenForClicks(this.btnHandler.bind(this))
             .listenForEnterLeave(
                 this.enterHandler.bind(this),
@@ -1369,150 +1854,195 @@ class QuickSettingsWindow extends Div {
             )
 
         //Show/Hide Labels
-        x += 28
+        x += dist
         new BasicButton("btnToggleLabel", "", id)
             .fixSize(btnSize, btnSize)
             .fixLocation(x, this.fullSize - btnSize)
             .addClass("imagebutton")
             .bgImage("images/ui/label.svg")
             .bgImageFit()
-            .addAction("labelToggle")
+            .addAction({ detail: "labelToggle", x: x })
             .listenForClicks(this.btnHandler.bind(this))
             .listenForEnterLeave(
                 this.enterHandler.bind(this),
                 this.leaveHandler.bind(this)
             )
-        //Open and Close buttons
-        new BasicButton("btnOpenQuickSettings", "", id)
-            .fixSize(18, 18)
-            .fixLocation(this.width - btnSize, this.fullSize - btnSize)
-            .addClass("imagebutton2")
-            .bgImage("images/ui/arrow_down.png")
-            .addAction("btnOpen")
+
+        //PTL Toggle
+        x += dist
+        new BasicButton("btnTogglePTL", "", id)
+            .fixSize(btnSize, btnSize)
+            .fixLocation(x, this.fullSize - btnSize)
+            .addClass("imagebutton")
+            .bgImage("images/ui/ptl.png")
+            .bgImageFit()
+            .applyStyle("background-size", "18px, 18px")
+            .applyStyle("background-position-y", "3px")
+            .applyStyle("background-position-x", "3px")
+            .addAction({ detail: "ptlToggle", x: x })
             .listenForClicks(this.btnHandler.bind(this))
+            .listenForEnterLeave(
+                this.enterHandler.bind(this),
+                this.leaveHandler.bind(this)
+            )
 
-        new BasicButton("btnCloseQuickSettings", "", id)
-            .fixSize(18, 18)
-            .fixLocation(this.width - btnSize, this.fullSize - btnSize)
-            .addClass("imagebutton2")
-            .bgImage("images/ui/arrow_up.png")
-            .addAction("btnClose")
+        //RTE Toggle
+        x += dist
+        new BasicButton("btnToggleRTE", "", id)
+            .fixSize(btnSize, btnSize)
+            .fixLocation(x, this.fullSize - btnSize)
+            .addClass("imagebutton")
+            .bgImage("images/ui/rte.png")
+            .bgImageFit()
+            .addAction({ detail: "rteToggle", x: x })
             .listenForClicks(this.btnHandler.bind(this))
-            .hide()
+            .applyStyle("background-position-y", "5px")
+            .listenForEnterLeave(
+                this.enterHandler.bind(this),
+                this.leaveHandler.bind(this)
+            )
+
+        //HLO Toggle
+        x += dist
+        new BasicButton("btnToggleHLO", "", id)
+            .fixSize(btnSize, btnSize)
+            .fixLocation(x, this.fullSize - btnSize)
+            .addClass("imagebutton")
+            .bgImage("images/ui/hlo.png")
+            .bgImageFit()
+            .applyStyle("background-size", "18px, 18px")
+            .applyStyle("background-position-y", "3px")
+            .addAction({ detail: "hloToggle", x: x })
+            .listenForClicks(this.btnHandler.bind(this))
+            .listenForEnterLeave(
+                this.enterHandler.bind(this),
+                this.leaveHandler.bind(this)
+            )
+
+        //SEP Toggle
+        x += dist
+        new BasicButton("btnToggleSEP", "", id)
+            .fixSize(btnSize, btnSize)
+            .fixLocation(x, this.fullSize - btnSize)
+            .addClass("imagebutton")
+            .bgImage("images/ui/sep.png")
+            .bgImageFit()
+            .applyStyle("background-size", "18px, 18px")
+            .applyStyle("background-position-y", "3px")
+            .applyStyle("background-position-x", "3px")
+            .addAction({ detail: "sepToggle", x: x })
+            .listenForClicks(this.btnHandler.bind(this))
+            .listenForEnterLeave(
+                this.enterHandler.bind(this),
+                this.leaveHandler.bind(this)
+            )
+
+        //SCA Toggle
+        x += dist
+        this.btnScan = new BasicButton("btnToggleSCA", "", id)
+            .fixSize(btnSize, btnSize)
+            .fixLocation(x, this.fullSize - btnSize)
+            .addClass("imagebutton")
+            .bgImage("images/ui/sca.png")
+            .bgImageFit()
+            .addAction({ detail: "scaToggle", x: x })
+            .listenForClicks(this.btnHandler.bind(this))
+            .listenForEnterLeave(
+                this.enterHandler.bind(this),
+                this.leaveHandler.bind(this)
+            )
+
+        //Wind
+        this.btnWind = new BasicButton("btnToggleWind", "", id)
+            .fixSize(btnSize + 4, btnSize)
+            .fixLocation(x, this.fullSize - btnSize)
+            .addClass("imagebutton")
+            .bgImage("images/ui/wind.png")
+            .bgImageFit()
+            .applyStyle("background-size", "20px, 20px")
+            .applyStyle("background-position-y", "5px")
+            .applyStyle("background-position-x", "3px")
+            .addAction({ detail: "windToggle", x: x })
+            .listenForClicks(this.btnHandler.bind(this))
+            .listenForEnterLeave(
+                this.enterHandler.bind(this),
+                this.leaveHandler.bind(this)
+            )
     }
-    addNavSection(id) {
-        let btnSize = 20
-        let x = 32
-        let y = 3
-        let space = 6
 
-        new HoldButton("", "panUP", 0, this.holdHandler.bind(this), "", id)
-            .addClass("imagebutton2")
-            .bgImage("images/ui/pan_up.png")
-            .fixSize(btnSize, btnSize)
-            .fixLocation(x + btnSize, y + space)
-
-        new HoldButton("", "panLEFT", 0, this.holdHandler.bind(this), "", id)
-            .addClass("imagebutton2")
-            .bgImage("images/ui/pan_left.png")
-            .fixSize(btnSize, btnSize)
-            .fixLocation(x, y + btnSize / 2 + space)
-
-        new HoldButton("", "panRIGHT", 0, this.holdHandler.bind(this), "", id)
-            .addClass("imagebutton2")
-            .bgImage("images/ui/pan_right.png")
-            .fixSize(btnSize, btnSize)
-            .fixLocation(x + btnSize * 2, y + btnSize / 2 + space)
-
-        new HoldButton("", "panDOWN", 0, this.holdHandler.bind(this), "", id)
-            .addClass("imagebutton2")
-            .bgImage("images/ui/pan_down.png")
-            .fixSize(btnSize, btnSize)
-            .fixLocation(x + btnSize, y + btnSize + space)
-
-        btnSize = 24
-        x = 100
-        y = 0
-        new HoldButton("", "zoomIn", 0, this.holdHandler.bind(this), "", id)
-            .addClass("imagebutton2")
-            .bgImage("images/ui/zoom_in.png")
-            .fixSize(btnSize, btnSize)
-            .fixLocation(x, y)
-        new HoldButton("", "zoomOut", 0, this.holdHandler.bind(this), "", id)
-            .addClass("imagebutton2")
-            .bgImage("images/ui/zoom_out.png")
-            .fixSize(btnSize, btnSize)
-            .fixLocation(x, y + btnSize)
-    }
     btnHandler(details) {
-        if (details.action == "btnSettings") {
+        if (details.action.detail == "btnSettings") {
             this.lblExplain.hide()
             dispatchMessage(MSGUI, "dispSettingsWindow")
-        } else if (details.action == "darkMode") {
+        } else if (details.action.detail == "darkMode") {
             dispatchMessage(MSGUI, "toggleDarkMode")
-        } else if (details.action == "gridToggle") {
+        } else if (details.action.detail == "gridToggle") {
             dispatchMessage(MSGUI, "gridToggle")
-        } else if (details.action == "labelToggle") {
+        } else if (details.action.detail == "labelToggle") {
             dispatchMessage(MSGUI, "labelToggle")
-        } else if (details.action == "btnEdit") {
+        } else if (details.action.detail == "btnEdit") {
             dispatchMessage(MSGUI, "changeAppMode", EDITMODE)
-        } else if (details.action == "btnAnimate") {
+        } else if (details.action.detail == "btnAnimate") {
             dispatchMessage(MSGUI, "changeAppMode", ANIMATEMODE)
-        } else if (
-            details.action == "btnClose" ||
-            details.action == "btnOpen"
-        ) {
-            this.toggleState()
+        } else if (details.action.detail == "windToggle") {
+            dispatchMessage(MSGUI, "windEditorWindow")
+        } else if (details.action.detail == "toggleMiniNav") {
+            dispatchMessage(MSGUI, "miniNavWindow")
+        } else if (details.action.detail == "ptlToggle") {
+            dispatchMessage(MSGTOOLS, "toggler", "bShowPTL")
+        } else if (details.action.detail == "rteToggle") {
+            dispatchMessage(MSGTOOLS, "toggler", "bShowRoute")
+        } else if (details.action.detail == "hloToggle") {
+            dispatchMessage(MSGTOOLS, "toggler", "bShowHalo")
+        } else if (details.action.detail == "sepToggle") {
+            dispatchMessage(MSGTOOLS, "toggler", "bShowSep")
+        } else if (details.action.detail == "scaToggle") {
+            dispatchMessage(MSGTOOLS, "toggler", "bShowScan")
         }
     }
-    holdHandler(details) {
-        if (details.actionType == "zoomOut") {
-            Pos2d.zoomIn()
-        } else if (details.actionType == "zoomIn") {
-            Pos2d.zoomOut()
-        } else if (details.actionType == "panUP") {
-            Pos2d.pan(0, 0.1)
-        } else if (details.actionType == "panLEFT") {
-            Pos2d.pan(0.1, 0)
-        } else if (details.actionType == "panRIGHT") {
-            Pos2d.pan(-0.1, 0)
-        } else if (details.actionType == "panDOWN") {
-            Pos2d.pan(0, -0.1)
-        } else {
-            console.log(details)
-        }
-        dispatchMessage(MSGREDRAW, true)
-    }
+
     enterHandler(details) {
-        if (details.action == "btnSettings") {
-            this.lblExplain.updateText("Settings").show()
-        } else if (details.action == "darkMode") {
-            this.lblExplain.updateText("Dark/Light Mode").show()
-        } else if (details.action == "gridToggle") {
-            this.lblExplain.updateText("Toggle Grid").show()
-        } else if (details.action == "labelToggle") {
-            this.lblExplain.updateText("Toggle Labels").show()
-        } else if (details.action == "btnEdit") {
-            this.lblExplain.updateText("Edit Mode").show()
-        } else if (details.action == "btnAnimate") {
-            this.lblExplain.updateText("Animation Mode").show()
+        this.lblExplain.fixLocation(details.action.x + 30, 30)
+        if (details.action.detail == "btnSettings") {
+            this.lblExplain.updateCaption("Settings").show()
+        } else if (details.action.detail == "darkMode") {
+            this.lblExplain.updateCaption("Dark/Light Mode").show()
+        } else if (details.action.detail == "gridToggle") {
+            this.lblExplain.updateCaption("Toggle Grid").show()
+        } else if (details.action.detail == "labelToggle") {
+            this.lblExplain.updateCaption("Toggle Labels").show()
+        } else if (details.action.detail == "btnEdit") {
+            this.lblExplain.updateCaption("Edit Mode").show()
+        } else if (details.action.detail == "btnAnimate") {
+            this.lblExplain.updateCaption("Run Mode").show()
+        } else if (details.action.detail == "windToggle") {
+            this.lblExplain.updateCaption("Wind Editor").show()
+        } else if (details.action.detail == "toggleMiniNav") {
+            this.lblExplain.updateCaption("Toggle Nav Panel").show()
+        } else if (details.action.detail == "ptlToggle") {
+            this.lblExplain.updateCaption("Toggle Prediected Track Line").show()
+        } else if (details.action.detail == "rteToggle") {
+            this.lblExplain.updateCaption("Toggle Route Display").show()
+        } else if (details.action.detail == "hloToggle") {
+            this.lblExplain.updateCaption("Toggle HALO").show()
+        } else if (details.action.detail == "sepToggle") {
+            this.lblExplain.updateCaption("Toggle Separation Display").show()
+        } else if (details.action.detail == "scaToggle") {
+            this.lblExplain.updateCaption("Toggle Aircraft Scans").show()
         }
     }
     leaveHandler(details) {
         this.lblExplain.hide()
     }
-    toggleState() {
-        if (this.state == "full") {
-            this.state = "part"
-            this.setY(-(this.fullSize - this.partSize))
-            this.btnOpenQuickSettings.show()
-            this.btnCloseQuickSettings.hide()
+    setMode(mode) {
+        if (mode == EDITMODE) {
+            this.btnWind.show()
+            this.btnScan.hide()
         } else {
-            this.state = "full"
-            this.setY(0)
-            this.btnOpenQuickSettings.hide()
-            this.btnCloseQuickSettings.show()
+            this.btnWind.hide()
+            this.btnScan.show()
         }
+        return this
     }
 }
 class VerticalAddWindow extends Div {
@@ -1950,17 +2480,292 @@ class ShapeEditor extends Div {
         }
     }
 }
+class WindEditor extends DraggableWindow {
+    constructor(id, closeImgURL, parentid = null) {
+        super(id, closeImgURL, parentid)
+        let uid = this.id
+        //console.log(uid)
+        this.windCards = []
+        this.cardHeight = 30
+
+        this.fixSize(380, 85)
+            .assignClasses("wn-draggable-main", "wn-titlebar", "imagebutton")
+            .addAction("wnWindEditor")
+            .getCloseNotifications(this.clickHandler.bind(this))
+            .hide()
+
+        let x = 5
+        let y = 30
+        new Label("", "ALT", id)
+            .addClass("obj-label")
+            .addClass("boldit")
+            .addClass("underlineit")
+            .fixLocation(x + 10, y)
+
+        this.inpAlt = new NumberInput("", uid)
+            .fixLocation(x, y + 15)
+            .setParms(0, 600, 10)
+
+        x += 75
+        new Label("", "DIR", id)
+            .addClass("obj-label")
+            .addClass("boldit")
+            .addClass("underlineit")
+            .fixLocation(x + 10, y)
+        this.inpDir = new NumberInput("", uid)
+            .fixLocation(x, y + 15)
+            .setParms(0, 360, 5)
+
+        x += 75
+        new Label("", "SPD", id)
+            .addClass("obj-label")
+            .addClass("boldit")
+            .addClass("underlineit")
+            .fixLocation(x + 10, y)
+        this.inpSpd = new NumberInput("", uid)
+            .fixLocation(x, y + 15)
+            .setParms(0, 240, 5)
+
+        x += 75
+        new BasicButton("", "Add Layer", uid)
+            .fixLocation(x, y + 12)
+            .fixSize(140, 28)
+            .listenForClicks(this.clickHandler.bind(this))
+            .addAction("addLayer")
+            .addClass("basicbutton1")
+
+        this.reset()
+    }
+    clickHandler(details) {
+        if (details.action == "wnWindEditor:close") {
+            this.hide()
+        } else if (details.action == "addLayer") {
+            //console.log("add layer")
+            let w = {
+                alt: this.inpAlt.value,
+                dir: this.inpDir.value,
+                spd: this.inpSpd.value,
+            }
+            dispatchMessage(MSGWINDCHANGE, "add", w)
+            this.reset()
+        }
+    }
+    reset() {
+        this.inpAlt.setValue(0)
+        this.inpDir.setValue(0)
+        this.inpSpd.setValue(0)
+    }
+    updateWinds(wind) {
+        while (wind.layers.length > this.windCards.length) {
+            this.windCards.push(new WindCard("", this.id, this.cardHeight))
+        }
+        while (wind.layers.length < this.windCards.length) {
+            let p = this.windCards.pop()
+            p.destruct()
+        }
+        //update all the cards
+        let x = 50
+        let y = 85
+        for (let i = 0; i < wind.layers.length; i++) {
+            let w = wind.layers[i]
+            let d = String(w.dir)
+            while (d.length < 3) {
+                d = "0" + d
+            }
+            d += "\u00B0"
+            let tx = "FL" + w.alt + ":   " + d + "/" + w.spd
+            this.windCards[i].fixLocation(x, y)
+            this.windCards[i].label.updateCaption(tx)
+            this.windCards[i].index = i
+            y += this.cardHeight + 5
+        }
+        this.setHeight(85 + wind.layers.length * (this.cardHeight + 5) + 10)
+    }
+}
+class WindCard extends Div {
+    constructor(id, parentid, cardHeight) {
+        super(id, parentid)
+        let uid = this.id
+        //console.log(uid)
+        this.fixSize(225, cardHeight).addClass("card")
+        this.label = new Label("", "", uid)
+            .fixLocation(30, 3)
+            .addClass("card-label")
+        this.btnDelete = new BasicButton("", "", uid)
+            .fixSize(22, 22)
+            .fixLocation(5, 2)
+            .addClass("imagebutton2")
+            .bgImage("images/ui/delete.png")
+            .addAction("btnDelete")
+            .listenForClicks(this.btnHandler.bind(this))
+    }
+    destruct() {
+        this.btnDelete.destroy()
+        this.label.destroy()
+        this.destroy()
+    }
+    btnHandler() {
+        //console.log("add delete functionality")
+        dispatchMessage(MSGWINDCHANGE, "delete", this.index)
+    }
+}
+class TimeControlWindow extends Div {
+    constructor(id, parentid = null) {
+        super(id, parentid)
+        this.fixSize(325, 75).addClass("bottom-dialog")
+
+        new Label("", "Time Control", this.id)
+            .addClass("obj-label2")
+            .fontSize(16)
+            .centerH()
+        //create the 6 buttons
+        let x = 5
+        let y = 20
+        for (let i = -3; i < 4; i++) {
+            if (i == 0) continue
+            let fName = String(Math.abs(i)) + "x"
+            if (i < 0) fName = "m" + fName
+            let url = "images/ui/" + fName + ".png"
+            let t = 0
+            if (i == -3) {
+                t = -30
+            } else if (i == -2) {
+                t = -10
+            } else if (i == -1) {
+                t = -1
+            } else if (i == 1) {
+                t = 1
+            } else if (i == 2) {
+                t = 10
+            } else {
+                t = 30
+            }
+
+            new HoldButton(
+                "",
+                "panTime",
+                t,
+                this.panHandler.bind(this),
+                "",
+                this.id
+            )
+                .addClass("panbutton")
+                .bgImage(url)
+                .fixSize(50, 18)
+                .fixLocation(x, y)
+            x += 52
+        }
+        //add buttons
+        new BasicButton("", "Reset", this.id)
+            .addClass("basicbutton1")
+            .fixLocation(5, 45)
+            .fixSize(102, 24)
+            .addAction("resetToZero")
+            .listenForClicks(this.clickHandler.bind(this))
+        new BasicButton("", "Set Zero", this.id)
+            .addClass("basicbutton1")
+            .fixLocation(213, 45)
+            .fixSize(102, 24)
+            .addAction("setZero")
+            .listenForClicks(this.clickHandler.bind(this))
+
+        //create the time display
+        this.lblTime = new Label("", "0:00:00", this.id)
+            .addClass("obj-label2")
+            .fontSize(22)
+            .setY(45)
+            .centerH()
+    }
+    clickHandler(details) {
+        dispatchMessage(MSGTIMING, details.action, null)
+    }
+    panHandler(details) {
+        dispatchMessage(MSGTIMING, "pan-time", details.value)
+    }
+    updateDisplay(val) {
+        this.lblTime.updateCaption(val)
+    }
+}
+class MiniNavPanel extends Div {
+    constructor(id, parentID = null) {
+        super(id, parentID)
+        this.fixSize(0, 0).fixLocation(60, 10).showOverflow()
+        let btnSize = 20
+        let x = 0
+        let y = 0
+        let space = 6
+
+        new HoldButton("", "panUP", 0, this.holdHandler.bind(this), "", id)
+            .addClass("imagebutton2")
+            .bgImage("images/ui/pan_up.png")
+            .fixSize(btnSize, btnSize)
+            .fixLocation(x + btnSize, y + space)
+
+        new HoldButton("", "panLEFT", 0, this.holdHandler.bind(this), "", id)
+            .addClass("imagebutton2")
+            .bgImage("images/ui/pan_left.png")
+            .fixSize(btnSize, btnSize)
+            .fixLocation(x, y + btnSize / 2 + space)
+
+        new HoldButton("", "panRIGHT", 0, this.holdHandler.bind(this), "", id)
+            .addClass("imagebutton2")
+            .bgImage("images/ui/pan_right.png")
+            .fixSize(btnSize, btnSize)
+            .fixLocation(x + btnSize * 2, y + btnSize / 2 + space)
+
+        new HoldButton("", "panDOWN", 0, this.holdHandler.bind(this), "", id)
+            .addClass("imagebutton2")
+            .bgImage("images/ui/pan_down.png")
+            .fixSize(btnSize, btnSize)
+            .fixLocation(x + btnSize, y + btnSize + space)
+
+        btnSize = 24
+        x = 60
+        y = 0
+        new HoldButton("", "zoomIn", 0, this.holdHandler.bind(this), "", id)
+            .addClass("imagebutton2")
+            .bgImage("images/ui/zoom_in.png")
+            .fixSize(btnSize, btnSize)
+            .fixLocation(x, y)
+        new HoldButton("", "zoomOut", 0, this.holdHandler.bind(this), "", id)
+            .addClass("imagebutton2")
+            .bgImage("images/ui/zoom_out.png")
+            .fixSize(btnSize, btnSize)
+            .fixLocation(x, y + btnSize)
+    }
+    holdHandler(details) {
+        if (details.action == "zoomOut") {
+            Pos2d.zoomIn()
+        } else if (details.action == "zoomIn") {
+            Pos2d.zoomOut()
+        } else if (details.action == "panUP") {
+            Pos2d.pan(0, 0.1)
+        } else if (details.action == "panLEFT") {
+            Pos2d.pan(0.1, 0)
+        } else if (details.action == "panRIGHT") {
+            Pos2d.pan(-0.1, 0)
+        } else if (details.action == "panDOWN") {
+            Pos2d.pan(0, -0.1)
+        } else {
+            console.log(details)
+        }
+        dispatchMessage(MSGREDRAW, true)
+    }
+}
+
+//*------------------------Object Editing Subpanels
 class ItemEditor extends Div {
     constructor(id, parentid = null) {
         super(id, parentid)
-        this.masterWidth = 160
+        this.masterWidth = 180
         this.fixSize(this.masterWidth, 500).addClass("stack-pane")
-
         new Label("", "Editor", this.id)
             .addClass("obj-label2")
             .fontSize(16)
             .fixLocation(0, 2)
         this.closedHeight = 20
+        this.currentPanelHeight = 20
+        this.maxHeight = 500
         //create subpanels
         this.aSubpanels = []
         this.activeSubpanel = -1
@@ -2020,11 +2825,20 @@ class ItemEditor extends Div {
                 this.closedHeight
             )
         )
+        this.aSubpanels.push(
+            new AircraftEditorSubpanel(
+                "",
+                this.id,
+                this.masterWidth
+            ).fixLocation(0, this.closedHeight)
+        )
+        this.scrollOverflowY()
         this.activate(null)
     }
     onResize(w, h) {
-        this.fixLocation(w - 160, 0)
-        this.windowHeight = h
+        this.fixLocation(w - this.masterWidth, 0)
+        this.maxHeight = h
+        this.resetHeight()
     }
     activate(item) {
         if (!item) {
@@ -2047,6 +2861,8 @@ class ItemEditor extends Div {
             this.activeSubpanel = 7
         } else if (item.type == "text") {
             this.activeSubpanel = 8
+        } else if (item.type == "aircraft") {
+            this.activeSubpanel = 9
         } else {
             console.log(item.type)
             this.activeSubpanel = -1
@@ -2055,37 +2871,25 @@ class ItemEditor extends Div {
     }
     displayPanel(index, item) {
         let h = this.closedHeight
+
         for (let i = 0; i < this.aSubpanels.length; i++) {
             this.aSubpanels[i].hide()
             if (i == index) {
-                h = this.aSubpanels[index].activate(item)
+                h += this.aSubpanels[index].activate(item)
             }
         }
-        this.fixSize(this.masterWidth, h)
+
+        this.currentPanelHeight = h
+        this.resetHeight()
     }
-    activateRunway() {
-        this.lblType.updateCaption("Runway")
-        //console.log(this.source)
-        this.rwyShapeEditor.activate(
-            this.source,
-            true,
-            this.source.strokeColor,
-            this.source.strokeWeight,
-            this.source.fillColor
-        )
-        this.setHeight(200)
+    resetHeight() {
+        if (this.currentPanelHeight > this.maxHeight) {
+            this.fixSize(this.masterWidth, this.maxHeight)
+        } else {
+            this.fixSize(this.masterWidth, this.currentPanelHeight)
+        }
     }
-    activateApproach() {
-        this.lblType.updateCaption("Approach")
-        this.approachShapeEditor.activate(
-            this.source,
-            false,
-            this.source.strokeColor,
-            this.source.strokeWeight,
-            this.source.fillColor
-        )
-        this.setHeight(200)
-    }
+
     processAirwayRouteChange() {
         this.aSubpanels[3].updateRoutePoints()
     }
@@ -2883,11 +3687,202 @@ class TextEditorSubpanel extends Div {
         return this.masterHeight
     }
 }
+class AircraftEditorSubpanel extends Div {
+    constructor(id, parentid, width) {
+        super(id, parentid)
+        this.masterWidth = width
+        this.masterHeight = 440
+
+        this.fixSize(this.masterWidth, this.masterHeight)
+        //create an inner item so we can scrol
+        this.scrollOverflowY()
+
+        //-------------------------------------Object Type Label
+        let y = 0
+        let x = 5
+        new Label("", "Object Type", this.id)
+            .fixLocation(x, y)
+            .addClass("obj-label")
+        new Label("", "Aircraft", this.id)
+            .fixLocation(x + 7, y + 12)
+            .addClass("obj-label2")
+
+        //---------------------------------------------Display Layer
+        y += 30
+        new Label("", "Display Layer", this.id)
+            .fixLocation(x, y)
+            .addClass("obj-label")
+        this.inpLayerLabel = new NumberInput("", this.id)
+            .setParms(0, 255, 1)
+            .fixLocation(x + 7, y + 15)
+            .fixSize(this.masterWidth / 2 - 24, 18)
+            .addClass("number-input")
+            .addAction("changeLayer")
+            .listenForInput(this.changeHandler.bind(this))
+        //---------------------------------------------Fix Size Override
+        y += 36
+        new Label("", "Target Size Multiplier", this.id)
+            .addClass("obj-label")
+            .fixLocation(x, y)
+        this.inpTargetSize = new Slider("", 0.25, 5, 0.25, 1, this.id)
+            .fixLocation(x + 7, y + 15)
+            .setWidth(this.masterWidth - 24)
+            .listenForInput(this.changeHandler.bind(this))
+            .addAction("adjustTargetSize")
+            .addClass("slider")
+        //---------------------------------------------Fix Size Override
+        y += 36
+        new Label("", "Data Tag Size Multiplier", this.id)
+            .addClass("obj-label")
+            .fixLocation(x, y)
+        this.inpTagSize = new Slider("", 0.25, 5, 0.25, 1, this.id)
+            .fixLocation(x + 7, y + 15)
+            .setWidth(this.masterWidth - 24)
+            .listenForInput(this.changeHandler.bind(this))
+            .addAction("adjustTagSize")
+            .addClass("slider")
+
+        //---------------------------------------------Shape Editor
+        y += 40
+        this.acShapeEditor = new ShapeEditor("", false, this.id).fixLocation(
+            x,
+            y
+        )
+
+        //---------------------------------------------Flight Details
+        y += 130
+        new Label("", "Flight Editor", this.id)
+            .addClass("obj-label")
+            .addClass("boldit")
+            .addClass("underlineit")
+            .fixLocation(x, y)
+
+        //---------------------------------------------AC IDENT
+        y += 18
+        new Label("", "Ident", this.id).fixLocation(x, y).addClass("obj-label")
+        this.inpIdent = new TextInput("", "", this.id)
+            .fixLocation(x, y + 15)
+            .fixSize(80, 20)
+            .addClass("text-input")
+            .addAction("changeIdent")
+            .listenForInput(this.flightDetailsChange.bind(this))
+        //---------------------------------------------AC Type
+        x += 90
+        new Label("", "Type", this.id).fixLocation(x, y).addClass("obj-label")
+        this.selType = new SelectionBox("", this.id)
+            .fixLocation(x, y + 15)
+            .addClass("text-input")
+            .fixSize(80, 20)
+            .addAction("changeType")
+            .listenForChanges(this.flightDetailsChange.bind(this))
+        for (let i = 0; i < director.aACType.length; i++) {
+            this.selType.addOption(i, director.aACType[i].ACType)
+        }
+        //---------------------------------------------AC IDENT
+        x -= 90
+        y += 38
+        new Label("", "Altitude", this.id)
+            .fixLocation(x, y)
+            .addClass("obj-label")
+        this.inpAltitude = new NumberInput("", this.id)
+            .fixLocation(x, y + 15)
+            .fixSize(80, 20)
+            .addClass("number-input")
+            .addAction("changeAltitude")
+            .listenForInput(this.flightDetailsChange.bind(this))
+
+        //---------------------------------------------Delete button
+        y += 44
+        this.btnFP = new BasicButton("", "Route Details", this.id)
+            .addClass("basicbutton1")
+            .fixLocation(20, y)
+            .fixSize(this.masterWidth - 40, 24)
+            .addAction("details")
+            .listenForClicks(this.clickHandler.bind(this))
+
+        //---------------------------------------------Delete button
+        y += 32
+        this.btnDelete = new BasicButton("", "Delete", this.id)
+            .addClass("basicbutton1")
+            .fixLocation(20, y)
+            .fixSize(this.masterWidth - 40, 24)
+            .addAction("delete")
+            .listenForClicks(this.clickHandler.bind(this))
+    }
+    changeHandler(details) {
+        // console.log("ac changeHandler")
+        // console.log(details)
+        dispatchMessage(MSGOBJECTEDIT, details.action, details.value)
+    }
+    flightDetailsChange(details) {
+        dispatchMessage(MSGFLIGHTEDIT, details.action, details.value)
+    }
+    clickHandler(details) {
+        // console.log("ac clickHandler")
+        if (details.action == "delete") {
+            dispatchMessage(MSGDELETE, null, null)
+        } else if (details.action == "details") {
+            dispatchMessage(MSGUI, "activateFPEditor", null)
+        } else {
+            console.log(details)
+        }
+    }
+
+    activate(item) {
+        this.show()
+        this.source = item
+        this.inpLayerLabel.value = item.layer
+        this.inpTargetSize.value = item.targetSizeMult
+        this.inpTagSize.value = item.tagSizeMult
+        this.acShapeEditor.activate(
+            item,
+            true,
+            item.strokeColor,
+            item.strokeWeight,
+            item.fillColor
+        )
+
+        this.inpIdent.value = item.ident
+        this.selType.selectOption(item.typeIndex)
+        //set the parms for the altitude input box and the value
+        this.inpAltitude.setParms(0, item.alt.maxAlt, 10)
+        this.inpAltitude.setValue(item.alt.curAlt)
+
+        return this.masterHeight
+    }
+}
+class FPEditor extends DraggableWindow {
+    constructor(id, closeImgURL, parentid = null) {
+        super(id, closeImgURL, parentid)
+        let uid = this.id
+        //console.log(uid)
+
+        this.fixSize(300, 125)
+            .assignClasses("wn-draggable-main", "wn-titlebar", "imagebutton")
+            .addAction(id)
+            .getCloseNotifications(this.clickHandler.bind(this))
+            .hide()
+
+        this.source = null
+    }
+    clickHandler(details) {
+        console.log(details)
+        if (details.action == "wnFPEditor:close") {
+            this.hide()
+            dispatchMessage(MSGUI, "finishFPEditor", null)
+        }
+    }
+    activate(ac) {
+        console.log("activating FPEditor")
+        this.show()
+    }
+}
 //*------------------------Map Item Classes
 class MapItem {
     constructor(displayContainer, displayList, type) {
         this.type = type
         this.displayContainer = displayContainer
+        this.containerID = displayContainer.cntSVG.id
         this.layer = 10
         this.aDragHandles = []
         this.index = displayList.length
@@ -2908,6 +3903,10 @@ class MapItem {
     destructor() {
         this.icon.destroy()
         this.aDragHandles.forEach((item) => item.destroy())
+    }
+    adjustSVGZ() {
+        this.icon.changeParent(this.containerID)
+        this.aDragHandles.forEach((item) => item.changeParent(this.containerID))
     }
     draw(itemSelected) {
         if (this == itemSelected) {
@@ -2978,10 +3977,11 @@ class Fix extends MapItem {
     updateSize(sz) {
         if (!this.bOverrideSize) {
             this.size = sz / 2
-            this.updateVertices()
+            //this.updateVertices()
         }
     }
     moveItem(dX, dY) {
+        if (director.bEditingFlightPlan) return
         //console.log(details);
         this.pos.display.x += dX
         this.pos.display.y += dY
@@ -3155,6 +4155,7 @@ class Runway extends MapItem {
         }
     }
     moveItem(dX, dY) {
+        if (director.bEditingFlightPlan) return
         //console.log(details);
         this.pos.display.x += dX
         this.pos.display.y += dY
@@ -3163,7 +4164,6 @@ class Runway extends MapItem {
         //appData.itemSelected = this;
         dispatchMessage(MSGREDRAW, true)
     }
-
     dragHandle(index, dX, dY) {
         //if affecting the width
         if (index == 1 || index == 3) {
@@ -3335,6 +4335,7 @@ class Approach extends MapItem {
         }
     }
     moveItem(dX, dY) {
+        if (director.bEditingFlightPlan) return
         //console.log(details);
         this.pos.display.x += dX
         this.pos.display.y += dY
@@ -3728,6 +4729,7 @@ class Sua extends MapItem {
         }
     }
     moveItem(dX, dY) {
+        if (director.bEditingFlightPlan) return
         //console.log(details);
         this.aVertices.forEach((item) => {
             item.display.x += dX
@@ -3846,6 +4848,7 @@ class CircleShape extends MapItem {
     }
 
     moveItem(dX, dY) {
+        if (director.bEditingFlightPlan) return
         //console.log(details);
         this.pos.display.x += dX
         this.pos.display.y += dY
@@ -3970,6 +4973,7 @@ class PolygonShape extends MapItem {
         }
     }
     moveItem(dX, dY) {
+        if (director.bEditingFlightPlan) return
         //console.log(details);
         this.aVertices.forEach((item) => {
             item.display.x += dX
@@ -4060,6 +5064,7 @@ class TextShape extends MapItem {
         )
     }
     dragHandle(index, dX, dY) {
+        if (dX == 0 && dY == 0) return
         let u = new Vector(dX, dY)
 
         let v1 = new Vector(
@@ -4071,6 +5076,7 @@ class TextShape extends MapItem {
         dispatchMessage(MSGREDRAW, true)
     }
     moveItem(dX, dY) {
+        if (director.bEditingFlightPlan) return
         this.pos.display.x += dX
         this.pos.display.y += dY
         this.pos.updatePosFromDisplay()
@@ -4400,5 +5406,547 @@ class ACType {
         } else {
             return this.aDescentRate[6]
         }
+    }
+}
+class Aircraft {
+    static acNumber = 0
+    static acVertices = [
+        new Point(0, 0.8507),
+        new Point(-0.441, 1),
+        new Point(-0.441, 0.8507),
+        new Point(-0.147, 0.629),
+        new Point(-0.147, 0.088),
+        new Point(-1, 0.443),
+        new Point(-1, 0.221),
+        new Point(-0.147, -0.289),
+        new Point(-0.147, -0.795),
+        new Point(-0.134, -0.861),
+        new Point(-0.104, -0.933),
+        new Point(-0.072, -0.96),
+        new Point(0, -1),
+        new Point(0.072, -0.96),
+        new Point(0.104, -0.933),
+        new Point(0.134, -0.861),
+        new Point(0.147, -0.795),
+        new Point(0.147, -0.289),
+        new Point(1, 0.221),
+        new Point(1, 0.443),
+        new Point(0.147, 0.088),
+        new Point(0.147, 0.629),
+        new Point(0.441, 0.8507),
+        new Point(0.441, 1),
+        new Point(0, 0.8507),
+    ]
+    static acDartVertices = [
+        new Point(0, -1),
+        new Point(-0.422, 0.9),
+        new Point(0.422, 0.9),
+    ]
+    constructor(
+        imageIndex,
+        dispX,
+        dispY,
+        settings,
+        displayContainer,
+        displayList,
+        typeList
+    ) {
+        this.type = "aircraft"
+        let p = Pos2d.posFromDisplay(dispX, dispY)
+        this.pos = new Pos2d(p.x, p.y)
+        this.typeList = typeList
+        this.settings = settings
+
+        //display items
+        this.displayContainer = displayContainer
+        this.layer = 25
+
+        //display icon container and icon
+        this.containerID = displayContainer.cntSVG.id
+        this.icon = new svgCircle("", this.containerID)
+        this.iconBaseClass = "svgDisplayObject"
+        this.icon.addClass(this.iconBaseClass)
+
+        //add a drag handle to rotate the item
+        this.dragHandle = new svgCircle("", this.displayContainer.cntSVG.id)
+        this.dragHandle.addClass("dragHandle")
+        this.dragHandle.setRadius(4)
+        this.dragHandle.type = "rotateHandle"
+        this.dragHandle.containingObject = this
+        this.dragHandle.addAction("dragHandle")
+
+        //set tag properties and tag icon
+        this.tagIcon = new svgRectangle("", this.containerID)
+        this.tagIconBaseClass = "svg-datatag"
+        this.tagIcon.type = "datatag"
+        this.tagIcon.containingObject = this
+        this.tagIcon.addClass(this.tagIconBaseClass)
+        this.bShowTag = false
+        this.tagRelativePosition = new Point(40, -40)
+        //booleans to figure out where to draw line relative to datablock
+        this.tagDrawBottom = true
+        this.tagDrawLeft = true
+
+        // SIZES & Colors
+        this.targetSizeMult = 1
+        this.tagSizeMult = 1
+        this.strokeColor = settings.acStrokeColor
+        this.fillColor = settings.acFillColor
+        this.strokeWeight = settings.acStrokeWeight
+
+        //Target Tools Flags
+        this.bShowPTL = false
+        this.bShowRoute = false
+        this.bShowHalo = false
+        this.bShowScan = false
+
+        //Assign a designator
+        Aircraft.acNumber++
+        let tNum = String(Aircraft.acNumber)
+        if (tNum.length == 1) tNum = "00" + tNum
+        else if (tNum.length == 2) tNum = "0" + tNum
+        this.ident = tNum
+
+        //heading
+        this.currentHeading = 30
+        this.bHasFlightPlan = false
+        this.bAssignedHeading = false
+        this.assignedHeading = null
+
+        //altitudes
+        this.alt = {}
+
+        //speeds
+        this.groundSpeed = 0
+
+        //get basics of aircraft type zero
+        this.changeACType(0)
+
+        //setup the drawing parameters
+        this.changeImageType(imageIndex) //0 to 3
+        displayList.push(this)
+        console.log(this)
+
+        this.calculateStatic()
+    }
+    destructor() {
+        this.icon.destroy()
+        this.tagIcon.destroy()
+        this.dragHandle.destroy()
+    }
+    adjustSVGZ() {
+        this.icon.changeParent(this.containerID)
+        this.tagIcon.changeParent(this.containerID)
+        this.dragHandle.changeParent(this.containerID)
+    }
+    changeImageType(index) {
+        this.imageType = index
+        this.changeSize()
+    }
+    changeSize() {
+        this.size = this.settings.acBaseRadius * this.targetSizeMult
+        if (this.imageType == 2) {
+            this.imagePoints = []
+            for (let i = 0; i < Aircraft.acDartVertices.length; i++) {
+                let p = Aircraft.acDartVertices[i]
+                this.imagePoints.push(
+                    new Point(p.x * this.size, p.y * this.size)
+                )
+            }
+        } else if (this.imageType == 3) {
+            this.imagePoints = []
+            for (let i = 0; i < Aircraft.acVertices.length; i++) {
+                let p = Aircraft.acVertices[i]
+                this.imagePoints.push(
+                    new Point(p.x * this.size, p.y * this.size)
+                )
+            }
+        } else {
+            this.imagePoints = null
+        }
+    }
+    //*---------------------DRAWING
+    draw(itemSelected) {
+        this.pos.updateDisplay()
+        //set canvas and styles
+        let cv = this.displayContainer.canvas
+
+        //draw PTL at the bottom
+        if (this.bShowPTL || this.settings.bShowPTL) {
+            this.drawPTL(cv)
+        }
+
+        //draw HALO at the bottom
+        if (this.bShowHalo || this.settings.bShowHalo) {
+            this.drawHalo(cv)
+        }
+
+        //TODO DRAW Route if needed
+
+        cv.strokeStyle(this.strokeColor)
+        cv.weight = this.strokeWeight
+        cv.fillStyle(this.fillColor)
+
+        if (this.imageType == 0) this.drawType0(cv, this.size)
+        else if (this.imageType == 1) this.drawType1(cv, this.size)
+        else this.drawShape(cv)
+
+        //add the icon
+        this.icon.setRadius(this.size)
+        this.icon.locate(this.pos.display)
+
+        if (this.bShowTag || this.settings.bShowTags) {
+            this.drawDataTag(cv)
+        }
+
+        if (this == itemSelected) {
+            this.bSelected = true
+            this.icon.changeClass("highlight")
+            if (director.appMode == EDITMODE) {
+                if (director.bEditingFlightPlan || this.bHasFlightPlan) {
+                    this.dragHandle.hide()
+                } else {
+                    this.drawDragHandle()
+                }
+            } else if (director.appMode == ANIMATEMODE) {
+                //action to takeif animatemode
+            }
+        } else {
+            this.bSelected = false
+            this.icon.changeClass(this.iconBaseClass)
+            this.dragHandle.hide()
+        }
+    }
+    drawDragHandle() {
+        //console.log("draw drag handle")
+        let dir = Pos2d.get2DVectorFromBearing(this.currentHeading).scale(
+            this.size
+        )
+        this.dragHandle.locate(
+            this.pos.display.x + dir.x,
+            this.pos.display.y + dir.y
+        )
+        this.dragHandle.show()
+    }
+    dragTag(dX, dY) {
+        //console.log("drag tag")
+        this.tagRelativePosition.x += dX
+        this.tagRelativePosition.y += dY
+
+        this.tagDrawLeft = false
+        if (this.tagRelativePosition.x > 0) {
+            this.tagDrawLeft = true
+        }
+
+        this.tagDrawBottom = false
+        if (this.tagRelativePosition.y < 0) {
+            this.tagDrawBottom = true
+        }
+    }
+    drawDataTag(cv) {
+        let fontSize = this.settings.acBaseTagSize * this.tagSizeMult
+        cv.fillStyle(this.settings.acTagFontColor)
+        //draw first line
+        let line1 = this.ident + " " + this.ACType
+        cv.drawText(
+            line1,
+            fontSize,
+            this.pos.display.x + this.tagRelativePosition.x,
+            this.pos.display.y + this.tagRelativePosition.y - fontSize,
+            false
+        )
+        //second
+        let line2 =
+            Math.round(this.alt.curAlt / 100) +
+            " " +
+            Math.round(this.groundSpeed / 10)
+        cv.drawText(
+            line2,
+            fontSize,
+            this.pos.display.x + +this.tagRelativePosition.x,
+            this.pos.display.y + this.tagRelativePosition.y,
+            false
+        )
+
+        //determine line widths
+        let w1 = cv.getTextSize(line1, fontSize, false).width
+        let w2 = cv.getTextSize(line2, fontSize, false).width
+
+        let w = w1
+        if (w2 > w1) w = w2
+
+        this.tagIcon.setSize(w, fontSize * 2)
+        this.tagIcon.locate(
+            this.pos.display.x + this.tagRelativePosition.x + w / 2,
+            this.pos.display.y + this.tagRelativePosition.y - fontSize
+        )
+
+        //draw a leader line
+        cv.strokeStyle(this.settings.acTagFontColor + "60")
+        cv.weight = 1
+
+        //dour possibilities of where to draw line
+        if (this.tagDrawLeft && this.tagDrawBottom) {
+            cv.drawLine(
+                this.pos.display.x,
+                this.pos.display.y,
+                this.pos.display.x + this.tagRelativePosition.x,
+                this.pos.display.y + this.tagRelativePosition.y
+            )
+        } else if (this.tagDrawLeft && !this.tagDrawBottom) {
+            cv.drawLine(
+                this.pos.display.x,
+                this.pos.display.y,
+                this.pos.display.x + this.tagRelativePosition.x,
+                this.pos.display.y + this.tagRelativePosition.y - fontSize
+            )
+        } else if (!this.tagDrawLeft && !this.tagDrawBottom) {
+            cv.drawLine(
+                this.pos.display.x,
+                this.pos.display.y,
+                this.pos.display.x + this.tagRelativePosition.x + w,
+                this.pos.display.y + this.tagRelativePosition.y - fontSize
+            )
+        } else if (!this.tagDrawLeft && this.tagDrawBottom) {
+            cv.drawLine(
+                this.pos.display.x,
+                this.pos.display.y,
+                this.pos.display.x + this.tagRelativePosition.x + w,
+                this.pos.display.y + this.tagRelativePosition.y
+            )
+        }
+    }
+    drawType0(cv, sz) {
+        // console.log("draw type 0")
+        cv.circle(this.pos.display, sz, true)
+        cv.drawLine(
+            this.pos.display.x,
+            this.pos.display.y - sz,
+            this.pos.display.x - 0.866 * sz,
+            this.pos.display.y + 0.5 * sz
+        )
+        cv.drawLine(
+            this.pos.display.x,
+            this.pos.display.y - sz,
+            this.pos.display.x + 0.866 * sz,
+            this.pos.display.y + 0.5 * sz
+        )
+        cv.drawLine(
+            this.pos.display.x - 0.866 * sz,
+            this.pos.display.y + 0.5 * sz,
+            this.pos.display.x + 0.866 * sz,
+            this.pos.display.y + 0.5 * sz
+        )
+    }
+    drawType1(cv, sz) {
+        // console.log("draw type 1")
+        cv.circle(this.pos.display, sz, true)
+    }
+    drawShape(cv) {
+        // console.log("draw type shape")
+        cv.translate(this.pos.display.x, this.pos.display.y)
+        cv.rotateDegrees(this.currentHeading)
+        cv.drawClosedPoly(this.imagePoints, true)
+        cv.restore()
+    }
+    drawPTL(cv) {
+        //show PTL
+        let predPos = this.pos.plus(
+            this.actualVector.multiply(this.settings.ptlLength * 60)
+        )
+        let d = Pos2d.displayFromPos(predPos.x, predPos.y)
+        cv.weight = 2
+        cv.strokeStyle(this.settings.ptlColor)
+        cv.drawLine(this.pos.display.x, this.pos.display.y, d.x, d.y)
+    }
+    drawHalo(cv) {
+        let d = Pos2d.getDisplayDistance(this.settings.haloSize)
+        cv.weight = 1
+        cv.strokeStyle(this.settings.haloColor)
+        cv.circle(this.pos.display, d, false)
+    }
+    drawRoute(cv) {}
+
+    //*-----------process Changes
+    changeAltitude(alt) {
+        this.alt.curAlt = alt
+        this.calculateStatic()
+        dispatchMessage(MSGREDRAW, true)
+    }
+    rotate(dX, dY) {
+        if (dX == 0 && dY == 0) return
+        let u = new Vector(dX, dY)
+        let v1 = Pos2d.get2DVectorFromBearing(this.currentHeading).scale(
+            this.size
+        )
+        let v2 = v1.plus(u)
+        this.currentHeading -= v2.heading - v1.heading
+        if (this.currentHeading > 360) this.currentHeading -= 360
+        if (this.currentHeading < 0) this.currentHeading += 360
+
+        this.calculateStatic()
+        dispatchMessage(MSGREDRAW, true)
+    }
+    moveItem(dX, dY) {
+        if (director.bEditingFlightPlan) {
+            //flight plan editor is open.
+            if (this.bSelected) {
+                console.log("action to move selected aircraft")
+            }
+            return
+        }
+        if (!this.bHasFlightPlan) {
+            //console.log(details);
+            this.pos.display.x += dX
+            this.pos.display.y += dY
+            this.pos.updatePosFromDisplay()
+            this.calculateStatic()
+            dispatchMessage(MSGREDRAW, true)
+        }
+    }
+    changeLayer(l) {
+        this.layer = l
+        this.icon.setZ(l)
+    }
+    changeACType(index) {
+        this.typeIndex = index
+        let t = this.typeList[index]
+        this.ACType = t.ACType
+        this.FTAS = t.FTAS
+        this.alt.maxAlt = t.MaxAlt * 100
+        this.alt.prefAlt = t.PrefAlt * 100
+        this.alt.curAlt = t.PrefAlt * 100
+        this.turnRate = t.TurnRate
+        this.weight = t.Weight
+
+        this.calculateStatic()
+        dispatchMessage(MSGREDRAW, true)
+    }
+    //*-----------------------STATIC Calculations
+    //Build items based on being in EDIT mode.  No climbing or descending....
+    updateStatic(dT) {
+        if (!this.bHasFlightPlan) {
+            let v = this.actualVector.multiply(dT)
+            this.pos.x += v.x
+            this.pos.y += v.y
+            this.pos.updateDisplay()
+        }
+    }
+    calculateStatic() {
+        //based on current position, TAS, altitude
+        if (this.bHasFlightPlan) {
+            //handle case where a/c on a defined route
+        } else {
+            //aircraft is not on defined route
+            this.currentUnitVector = Pos2d.vectorFromHeading(
+                this.currentHeading
+            )
+            let spd = this.typeList[this.typeIndex].getCruiseSpeed(
+                this.alt.curAlt
+            )
+            this.currentVector = this.currentUnitVector.multiply(spd / 3600)
+
+            //now calcualte the wind vector
+            let wind = director.windModel.getWindAt(this.alt.curAlt)
+            let dir = wind.dir + 180
+            if (dir > 360) dir -= 360
+            let wVector = Pos2d.vectorFromHeading(dir).multiply(wind.spd / 3600)
+            this.actualVector = this.currentVector.plus(wVector)
+            //this.effectiveHeading =
+            this.groundSpeed = this.actualVector.length * 3600
+            this.calculateZeroPosition()
+        }
+    }
+    calculateZeroPosition() {
+        //calculate where aircraft would be at time zero
+        this.posZero = this.pos.copy()
+
+        if (!this.bHasFlightPlan) {
+            let v = this.actualVector.multiply(
+                -director.masterTimer.currentTime
+            )
+            this.posZero.x += v.x
+            this.posZero.y += v.y
+        }
+    }
+    resetToZero() {
+        this.pos = this.posZero.copy()
+        this.pos.updateDisplay()
+    }
+    setNewZero() {
+        this.posZero = this.pos.copy()
+    }
+    //*-----------------------RUNNING Calculations
+}
+//*-----------------------Other Items
+class WindModel {
+    constructor() {
+        this.layers = []
+        //create a layer
+    }
+    addLayer(altitude, direction, speed) {
+        this.layers.push(
+            new WindLayer(Number(altitude), Number(direction), Number(speed))
+        )
+        this.sortLayers()
+    }
+    removeLayer(alt) {
+        let found = -1
+        for (let i = 0; i < this.layers.length; i++) {
+            if ((this.layers[i].alt = alt)) {
+                found = i
+            }
+        }
+        if (found > -1) this.layers.splice(found, 1)
+        this.sortLayers()
+    }
+    sortLayers() {
+        this.layers.sort((a, b) => a.alt - b.alt)
+    }
+    getWindAt(alt) {
+        if (this.layers.length == 0) {
+            return {
+                dir: 0,
+                spd: 0,
+            }
+        }
+        alt /= 100
+        let loWindAlt = 0
+        let loWindSpd = this.layers[0].spd
+        let loWindDir = this.layers[0].dir
+        for (let i = 0; i < this.layers.length; i++) {
+            if (alt < this.layers[i].alt) {
+                let d = fScale(
+                    loWindAlt,
+                    this.layers[i].alt,
+                    alt,
+                    loWindDir,
+                    this.layers[i].dir
+                )
+                let s = fScale(
+                    loWindAlt,
+                    this.layers[i].alt,
+                    alt,
+                    loWindSpd,
+                    this.layers[i].spd
+                )
+                return { dir: d, spd: s }
+            }
+            loWindAlt = this.layers[i].alt
+            loWindDir = this.layers[i].dir
+            loWindSpd = this.layers[i].spd
+        }
+        let w = this.layers[this.layers.length - 1]
+        return {
+            dir: w.dir,
+            spd: w.spd,
+        }
+    }
+}
+class WindLayer {
+    constructor(altitude, direction, speed) {
+        this.alt = altitude //in 100's of feet (FL)
+        this.dir = direction
+        this.spd = speed
     }
 }
